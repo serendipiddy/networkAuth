@@ -10,12 +10,12 @@ from ryu.lib.packet import packet
   Example method:
       @set_ev_cls(ofp_event.EventOFPErrorMsg,[HANDSHAKE_DISPATCHER, CONFIG_DISPATCHER, MAIN_DISPATCHER])
       def error_msg_handler(self, ev):
-        ep = error_parser()
+        ep = ErrorParser()
         error = ep.error_string(ev)
         self.logger.debug(error)
 '''
 
-class error_parser:
+class ErrorParser:
     # def error_msg_handler(self, ev):
         # msg = ev.msg
         
@@ -26,7 +26,10 @@ class error_parser:
         
     def error_string(self, ev):
         msg = ev.msg
-        return "ERROR: %s" % self._error_string(self,msg.type,msg.code)
+        # print("%s %s" % (msg.type, msg.code))
+        pkt = packet.Packet(msg.data)
+        type, code = self._error_string(msg.type,msg.code)
+        return "ERROR: %s - %s\n%s" % (type, code, pkt)
 
     def _error_string(self, type, code): 
         return {
@@ -44,8 +47,8 @@ class error_parser:
             ofproto_v1_3.OFPET_ROLE_REQUEST_FAILED:   self.role_request_failed(code),
             ofproto_v1_3.OFPET_METER_MOD_FAILED:      self.meter_mod_failed(code),
             ofproto_v1_3.OFPET_TABLE_FEATURES_FAILED: self.table_features_failed(code),
-            ofproto_v1_3.OFPET_EXPERIMENTE:           self.experimente(code)
-        }[type]
+            ofproto_v1_3.OFPET_EXPERIMENTER:          self.experimenter(code)
+        }.get(type,"type %d not found" % (type))
 
     # The error messages
         
@@ -54,7 +57,7 @@ class error_parser:
         code_msg = {
             ofproto_v1_3.OFPHFC_INCOMPATIBLE: "No compatible version",
             ofproto_v1_3.OFPHFC_EPERM:        "Permissions error"
-        }[code]
+        }.get(code,"code %d not found" % (code))
         return (type_msg,code_msg)
     def bad_request(self, code):
         type_msg = "Request was not understood"
@@ -73,7 +76,7 @@ class error_parser:
             ofproto_v1_3.OFPBRC_BAD_PORT:                  "Invalid port",
             ofproto_v1_3.OFPBRC_BAD_PACKET:                "Invalid packet in packet-out",
             ofproto_v1_3.OFPBRC_MULTIPART_BUFFER_OVERFLOW: "ofp_multipart_request overflowed the assigned buffer"
-        }[code]
+        }.get(code,"code %d not found" % (code))
         return (type_msg,code_msg)
     def bad_action(self, code):
         type_msg = "Error in action description"
@@ -94,7 +97,7 @@ class error_parser:
             ofproto_v1_3.OFPBAC_BAD_SET_TYPE:         "Unsupported type in SET_FIELD action",
             ofproto_v1_3.OFPBAC_BAD_SET_LEN:          "Length problem in SET_FIELD action",
             ofproto_v1_3.OFPBAC_BAD_SET_ARGUMENT:     "Bad argument in SET_FIELD action"
-        }[code]
+        }.get(code,"code %d not found" % (code))
         return (type_msg,code_msg)
     def bad_instruction(self, code):
         type_msg = "Error in instruction list"
@@ -108,7 +111,7 @@ class error_parser:
             ofproto_v1_3.OFPBIC_BAD_EXP_TYPE:         "Unknown instruction for experimenter id",
             ofproto_v1_3.OFPBIC_BAD_LEN:              "Length problem in instructions",
             ofproto_v1_3.OFPBIC_EPERM:                "Permissions error"
-        }[code]
+        }.get(code,"code %d not found" % (code))
         return (type_msg,code_msg)
     def bad_match(self, code):
         type_msg = "Error in match"
@@ -125,7 +128,7 @@ class error_parser:
             ofproto_v1_3.OFPBMC_BAD_PREREQ:          "A prerequisite was not met",
             ofproto_v1_3.OFPBMC_DUP_FIELD:           "A field type was duplicated",
             ofproto_v1_3.OFPBMC_EPERM:               "Permissions error"
-        }[code]
+        }.get(code,"code %d not found" % (code))
         return (type_msg,code_msg)
     def flow_mod_failed(self, code):
         type_msg = "Problem modifying flow entry"
@@ -138,13 +141,13 @@ class error_parser:
             ofproto_v1_3.OFPFMFC_BAD_TIMEOUT:         "Flow not added because of unsupported idle/hard time-out",
             ofproto_v1_3.OFPFMFC_BAD_COMMAND:         "Unsupported or unknown command",
             ofproto_v1_3.OFPFMFC_BAD_FLAGS:           "Unsupported or unknown flags"
-        }[code]
+        }.get(code,"code %d not found" % (code))
         return (type_msg,code_msg)
     def group_mod_failed(self, code):
         type_msg = "Problem modifying group entry"
         code_msg = {
-            ofproto_v1_3.OFPGMFC_GROUP_EXISTS:           "Group exists"
-            ofproto_v1_3.OFPGMFC_INVALID_GROUP:          "Invalid group"
+            ofproto_v1_3.OFPGMFC_GROUP_EXISTS:           "Group exists",
+            ofproto_v1_3.OFPGMFC_INVALID_GROUP:          "Invalid group",
             ofproto_v1_3.OFPGMFC_WEIGHT_UNSUPPORTED:     "Switch does not support unequal load sharing with select groups",
             ofproto_v1_3.OFPGMFC_OUT_OF_GROUPS:          "The group table is full",
             ofproto_v1_3.OFPGMFC_OUT_OF_BUCKETS:         "The maximum number of action buckets for a group has been exceeded",
@@ -158,7 +161,7 @@ class error_parser:
             ofproto_v1_3.OFPGMFC_BAD_BUCKET:             "Error in bucket",
             ofproto_v1_3.OFPGMFC_BAD_WATCH:              "Error in watch port/group",
             ofproto_v1_3.OFPGMFC_EPERM:                  "Permissions error"
-        }[code]
+        }.get(code,"code %d not found" % (code))
         return (type_msg,code_msg)
     def port_mod_failed(self, code):
         type_msg = "OFPT_PORT_MOD failed"
@@ -168,7 +171,7 @@ class error_parser:
             ofproto_v1_3.OFPPMFC_BAD_CONFIG:      "Specified config is invalid",
             ofproto_v1_3.OFPPMFC_BAD_ADVERTISE:   "Specified advertise is invalid",
             ofproto_v1_3.OFPPMFC_EPERM:           "Permissions error"
-        }[code]
+        }.get(code,"code %d not found" % (code))
         return (type_msg,code_msg)
     def table_mod_failed(self, code):
         type_msg = "Table mod request failed"
@@ -176,7 +179,7 @@ class error_parser:
             ofproto_v1_3.OFPTMFC_BAD_TABLE:       "Specified table does not exist",
             ofproto_v1_3.OFPTMFC_BAD_CONFIG:      "Specified config is invalid",
             ofproto_v1_3.OFPTMFC_EPERM:           "Permissions error"
-        }[code]
+        }.get(code,"code %d not found" % (code))
         return (type_msg,code_msg)
     def queue_op_failed(self, code):
         type_msg = "Queue operation failed"
@@ -184,7 +187,7 @@ class error_parser:
             ofproto_v1_3.OFPQOFC_BAD_PORT:        "Invalid port (or port does not exist)",
             ofproto_v1_3.OFPQOFC_BAD_QUEUE:       "Queue does not exist",
             ofproto_v1_3.OFPQOFC_EPERM:           "Permissions error"
-        }[code]
+        }.get(code,"code %d not found" % (code))
         return (type_msg,code_msg)
     def switch_config_failed(self, code):
         type_msg = "Switch config request failed"
@@ -193,7 +196,7 @@ class error_parser:
             ofproto_v1_3.OFPSCFC_BAD_LEN:         "Specified length is invalid",
             ofproto_v1_3.OFPQCFC_EPERM:           "Permissions error (deprecated). New or updated Ryu applications shall use OFPSCFC_EPERM. The variable name is a typo of in specifications before v1.3.1 (EXT-208)",
             ofproto_v1_3.OFPSCFC_EPERM:           "Permissions error"
-        }[code]
+        }.get(code,"code %d not found" % (code))
         return (type_msg,code_msg)
     def role_request_failed(self, code):
         type_msg = "Controller Role request failed"
@@ -201,7 +204,7 @@ class error_parser:
             ofproto_v1_3.OFPRRFC_STALE:           "Stale Message: old generation_id",
             ofproto_v1_3.OFPRRFC_UNSUP:           "Controller role change unsupported",
             ofproto_v1_3.OFPRRFC_BAD_ROLE:        "Invalid role"
-        }[code]
+        }.get(code,"code %d not found" % (code))
         return (type_msg,code_msg)
     def meter_mod_failed(self, code):
         type_msg = "Error in meter"
@@ -218,7 +221,7 @@ class error_parser:
             ofproto_v1_3.OFPMMFC_BAD_BAND_VALUE: "Band value unsupported",
             ofproto_v1_3.OFPMMFC_OUT_OF_METERS:  "No more meters available",
             ofproto_v1_3.OFPMMFC_OUT_OF_BANDS:   "The maximum number of properties for a meter has been exceeded"
-        }[code]
+        }.get(code,"code %d not found" % (code))
         return (type_msg,code_msg)
     def table_features_failed(self, code):
         type_msg = "Setting table features failed"
@@ -229,9 +232,9 @@ class error_parser:
             ofproto_v1_3.OFPTFFC_BAD_LEN:         "Length problem in properties",
             ofproto_v1_3.OFPTFFC_BAD_ARGUMENT:    "Unsupported property value",
             ofproto_v1_3.OFPTFFC_EPERM:           "Permissions error"
-        }[code]
+        }.get(code,"code %d not found" % (code))
         return (type_msg,code_msg)
-    def experimente(self, code):
+    def experimenter(self, code):
         type_msg = "Experimenter Error Messages"
         code_msg = ""
         return (type_msg,code_msg)

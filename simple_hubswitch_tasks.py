@@ -30,7 +30,10 @@ from ryu.lib.packet import (
     packet,
     ethernet
 )
-from netaddr import IPAddress
+from ryu.app.error_parser import ErrorParser
+
+from ryu.lib import hub
+from ryu.lib.dpid import dpid_to_str
 
 class SimpleHubSwitch(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
@@ -39,6 +42,32 @@ class SimpleHubSwitch(app_manager.RyuApp):
         super(SimpleHubSwitch, self).__init__(*args,**kwargs)
         self.mac_to_port = {} # d[id -> {mac->port}
         self.ishub = False
+        
+        self.monitor_thread = hub.spawn(self.monitor)  # thread to periodically print the traffic count (task2)
+        self.task2_datapath = 0;
+        
+    """Requests packet count for h1
+        Instated by self.monitor_thread"""
+    def monitor(self):
+        self.logger.info("Counting traffic of h1")
+        while True:
+            if self.task2_datapath != 0:
+                self.countTraffic(self.task2_datapath)
+            hub.sleep(5)
+            
+    def countTraffic(self,dp):
+        ofp = dp.ofproto
+        ofp_parser = dp.ofproto_parser
+        req = ofp_parser.OFPPortStatsRequest(dp, 0, 1)
+        dp.send_msg(req)
+    
+    @set_ev_cls(ofp_event.EventOFPPortStatsReply, MAIN_DISPATCHER)
+    def _countTraffic_handler(self,ev):
+        body = ev.msg.body
+        
+        print("Traffic of h1")
+        print("Sent: %d" % body[0].rx_packets)
+        print("Recv: %d" % body[0].tx_packets)
     
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -52,7 +81,13 @@ class SimpleHubSwitch(app_manager.RyuApp):
         match = parser.OFPMatch();
         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
         self.add_flow(datapath, 0, match, actions)
+        
+        # task 1
         self.task1_block2to3(datapath)
+        # task 2
+        self.task2_datapath = datapath
+        # task 3
+        
         
     def add_flow(self, datapath, priority, match, actions, buffer_id=None):
         '''Adds this flow to the given datapath'''
@@ -130,31 +165,32 @@ class SimpleHubSwitch(app_manager.RyuApp):
         dp.send_msg(out)
 
     def task1_block2to3(self, dp):
-        '''Block traffic between host 2 and host 3'''
+        '''Block ip traffic between host 2 and host 3'''
         ofp = dp.ofproto
         parser = dp.ofproto_parser
         
         actions = []  # empty actions: drop
-        match = parser.OFPMatch(ipv4_src="10.0.0.1",ipv4_dst="10.0.0.2")
         
-        match.append_field(ofproto_v1_3.OXM_OF_IPV4_SRC, int(IPAddress("10.0.0.1")))
-        match.append_field(ofproto_v1_3.OXM_OF_IPV4_DST, int(IPAddress("10.0.0.2")))
-        
+        match = parser.OFPMatch(
+          eth_type=0x0800,   # ip packet
+          ipv4_src=("10.0.0.2","255.255.255.255"),
+          ipv4_dst=("10.0.0.3","255.255.255.255")
+        )
         self.add_flow(dp, 2, match, actions)
         
+        match = parser.OFPMatch(
+          eth_type=0x0800,   #ip packet
+          ipv4_src=("10.0.0.3","255.255.255.255"),
+          ipv4_dst=("10.0.0.2","255.255.255.255")
+        )
+        self.add_flow(dp, 2, match, actions)
         
-        # match = parser.OFPMatch(ipv4_src="10.0.0.2",ipv4_dst="10.0.0.1")
-        # self.add_flow(dp, 2, match, actions)
+    def task2_countTrafficOfH1():
+        '''Count traffic to and from h1'''
+        
         
     @set_ev_cls(ofp_event.EventOFPErrorMsg,[HANDSHAKE_DISPATCHER, CONFIG_DISPATCHER, MAIN_DISPATCHER])
     def error_msg_handler(self, ev):
-        msg = ev.msg
+        ep = ErrorParser()
+        print (ep.error_string(ev))
         
-        print(ev.__dict__)
-        
-        self.logger.debug('OFPErrorMsg received: type=0x%02x code=0x%02x '
-                          'message=%s',
-                          msg.type, msg.code, utils.hex_array(msg.data))
-                          
-        pkt = packet.Packet(msg.data)
-        print("Packet %s " % pkt)
