@@ -21,13 +21,16 @@ from ryu.controller import ofp_event
 from ryu.controller.handler import (
     CONFIG_DISPATCHER, 
     MAIN_DISPATCHER,
+    HANDSHAKE_DISPATCHER,
     set_ev_cls
 )
+from ryu import utils
 from ryu.ofproto import ofproto_v1_3
 from ryu.lib.packet import (
     packet,
     ethernet
 )
+from netaddr import IPAddress
 
 class SimpleHubSwitch(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
@@ -49,6 +52,7 @@ class SimpleHubSwitch(app_manager.RyuApp):
         match = parser.OFPMatch();
         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
         self.add_flow(datapath, 0, match, actions)
+        self.task1_block2to3(datapath)
         
     def add_flow(self, datapath, priority, match, actions, buffer_id=None):
         '''Adds this flow to the given datapath'''
@@ -124,3 +128,33 @@ class SimpleHubSwitch(app_manager.RyuApp):
         out = parser.OFPPacketOut(datapath=dp, buffer_id=msg.buffer_id,
                                   in_port=in_port, actions=actions, data=data)
         dp.send_msg(out)
+
+    def task1_block2to3(self, dp):
+        '''Block traffic between host 2 and host 3'''
+        ofp = dp.ofproto
+        parser = dp.ofproto_parser
+        
+        actions = []  # empty actions: drop
+        match = parser.OFPMatch(ipv4_src="10.0.0.1",ipv4_dst="10.0.0.2")
+        
+        match.append_field(ofproto_v1_3.OXM_OF_IPV4_SRC, int(IPAddress("10.0.0.1")))
+        match.append_field(ofproto_v1_3.OXM_OF_IPV4_DST, int(IPAddress("10.0.0.2")))
+        
+        self.add_flow(dp, 2, match, actions)
+        
+        
+        # match = parser.OFPMatch(ipv4_src="10.0.0.2",ipv4_dst="10.0.0.1")
+        # self.add_flow(dp, 2, match, actions)
+        
+    @set_ev_cls(ofp_event.EventOFPErrorMsg,[HANDSHAKE_DISPATCHER, CONFIG_DISPATCHER, MAIN_DISPATCHER])
+    def error_msg_handler(self, ev):
+        msg = ev.msg
+        
+        print(ev.__dict__)
+        
+        self.logger.debug('OFPErrorMsg received: type=0x%02x code=0x%02x '
+                          'message=%s',
+                          msg.type, msg.code, utils.hex_array(msg.data))
+                          
+        pkt = packet.Packet(msg.data)
+        print("Packet %s " % pkt)
