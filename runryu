@@ -1,0 +1,9 @@
+#!/bin/bash
+
+SRC="/home/mininet/402project"
+DST="/home/mininet/ryu/ryu/app/"
+RYU="/home/mininet/ryu"
+
+cp $SRC/simple_hubswitch.py $DST
+
+PYTHONPATH=$RYU $RYU/bin/ryu-manager $RYU/ryu/app/simple_hubswitch.py
