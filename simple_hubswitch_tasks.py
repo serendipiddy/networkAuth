@@ -65,9 +65,7 @@ class SimpleHubSwitch(app_manager.RyuApp):
     def _countTraffic_handler(self,ev):
         body = ev.msg.body
         
-        print("Traffic of h1")
-        print("Sent: %d" % body[0].rx_packets)
-        print("Recv: %d" % body[0].tx_packets)
+        print("Traffic of h1, Sent: %d Recv: %d" % (body[0].rx_packets, body[0].tx_packets))
     
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -87,7 +85,7 @@ class SimpleHubSwitch(app_manager.RyuApp):
         # task 2
         self.task2_datapath = datapath
         # task 3
-        
+        self.task3_lldp(datapath)
         
     def add_flow(self, datapath, priority, match, actions, buffer_id=None):
         '''Adds this flow to the given datapath'''
@@ -185,9 +183,17 @@ class SimpleHubSwitch(app_manager.RyuApp):
         )
         self.add_flow(dp, 2, match, actions)
         
-    def task2_countTrafficOfH1():
-        '''Count traffic to and from h1'''
+    def task3_lldp(self, dp):
+        # add rule to route LLDP traffic to controller
+          # eth_type: 0x88CC
+        ofp = dp.ofproto
+        parser = dp.ofproto_parser
+        match = parser.OFPMatch(
+          eth_type=0x88CC   # LLDP
+        )
+        actions = [parser.OFPActionOutput(ofp.OFPP_CONTROLLER)]
         
+        self.add_flow(dp, 2, match, actions)
         
     @set_ev_cls(ofp_event.EventOFPErrorMsg,[HANDSHAKE_DISPATCHER, CONFIG_DISPATCHER, MAIN_DISPATCHER])
     def error_msg_handler(self, ev):
