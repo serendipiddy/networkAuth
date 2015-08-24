@@ -18,27 +18,29 @@
 
 from ryu.base import app_manager
 from ryu.controller import ofp_event
-from ryu.controller.hander import {
+from ryu.controller.handler import (
     CONFIG_DISPATCHER, 
     MAIN_DISPATCHER,
     set_ev_cls
+)
 from ryu.ofproto import ofproto_v1_3
-from ryu.lib.packet import {
+from ryu.lib.packet import (
     packet,
     ethernet
-}
+)
 
-class SimpleHubSwitch(app_mananger.RyuApp):
+class SimpleHubSwitch(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
     
     def __init__(self, *args, **kwargs):
-        super(SimpleHubSwitch, self).__init_(*args,**kwargs)
-        self.mac_to_port = {}
+        super(SimpleHubSwitch, self).__init__(*args,**kwargs)
+        self.mac_to_port = {} # d[id -> {mac->port}
+        self.ishub = False
     
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
-    '''Runs when switches handshake with controller
-        installs a default flow to out:CONTROLLER'''
+        """Runs when switches handshake with controller
+          installs a default flow to out:CONTROLLER"""
         datapath = ev.msg.datapath
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
@@ -46,10 +48,10 @@ class SimpleHubSwitch(app_mananger.RyuApp):
         # install a table-miss flow entry
         match = parser.OFPMatch();
         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
-        self.add_flow(datapath, priority=0, match, actions)
+        self.add_flow(datapath, 0, match, actions)
         
-    def add_flow(self, datapath, priority, match, action, buffer_id=None):
-    '''Adds this flow to the given datapath'''
+    def add_flow(self, datapath, priority, match, actions, buffer_id=None):
+        '''Adds this flow to the given datapath'''
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,actions)]
@@ -60,25 +62,65 @@ class SimpleHubSwitch(app_mananger.RyuApp):
         else:
             mod = parser.OFPFlowMod(datapath=datapath, priority=priority, 
                                     match=match, instructions=inst)
+        self.logger.debug("ADD FLOW: %s %s" % (match, actions))
         datapath.send_msg(mod)
         
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
-    def packet_in_handler(self, ev);
+    def packet_in_handler(self, ev):
         # truncated condition?
         
         msg = ev.msg
         dp = msg.datapath
-        ofproto = datapath.ofproto
-        parser = datapath.ofproto_parser
-        
-        '''For simple hub-like behaviour
-            * Take the in port
-            * Broadcast to all other data ports
-            '''
+        ofp = dp.ofproto
+        parser = dp.ofproto_parser
         
         in_port = msg.match['in_port']
         
-        print(msg)
+        if self.ishub:
+          '''For simple hub-like behaviour
+            * Take the in port
+            * Broadcast to all other data ports
+              '''
+          
+          match = parser.OFPMatch(in_port=in_port)
+          actions = [parser.OFPActionOutput(ofp.OFPP_FLOOD)]
+          
+          self.add_flow(dp, 1, match, actions)
+          
+          return
+          
+        '''Is a switch, so do work'''
+        pkt = packet.Packet(msg.data)
         
-        # pkt = packet.Packet(msg.data)
-        # eth = pkt.get_protocols(ethernet.ethernet)[0]
+        eth = pkt.get_protocols(ethernet.ethernet)[0]
+        dst = eth.dst
+        src = eth.src
+        
+        dpid = dp.id
+        self.mac_to_port.setdefault(dpid, {}) # if not exists, create
+        
+        self.mac_to_port[dpid][src] = in_port # learn the src mac's port
+        if dst in self.mac_to_port[dpid]:
+          out_port = self.mac_to_port[dpid][dst]
+        else:
+          out_port = ofp.OFPP_FLOOD
+          
+        actions = [parser.OFPActionOutput(out_port)]
+        
+        # This is where a flow rule is installed
+        if out_port != ofp.OFPP_FLOOD:
+          match = parser.OFPMatch(in_port=in_port, eth_dst=dst)
+          
+          if msg.buffer_id != ofproto.OFP_NO_BUFFER:
+                self.add_flow(datapath, 1, match, actions, msg.buffer_id)
+                return
+            else:
+                self.add_flow(datapath, 1, match, actions)
+        
+        data = None
+        if msg.buffer_id == ofproto.OFP_NO_BUFFER:
+            data = msg.data
+
+        out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
+                                  in_port=in_port, actions=actions, data=data)
+        datapath.send_msg(out)

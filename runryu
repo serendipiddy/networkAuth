@@ -1,9 +1,9 @@
 #!/bin/bash
 
-SRC="/home/mininet/402project"
+SRC="/home/mininet/networkAuth"
 DST="/home/mininet/ryu/ryu/app/"
 RYU="/home/mininet/ryu"
 
 cp $SRC/simple_hubswitch.py $DST
 
-PYTHONPATH=$RYU $RYU/bin/ryu-manager $RYU/ryu/app/simple_hubswitch.py
+PYTHONPATH=$RYU $RYU/bin/ryu-manager $RYU/ryu/app/simple_hubswitch.py $1
