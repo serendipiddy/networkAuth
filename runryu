@@ -11,4 +11,5 @@ cp $SRC/simple_udp_auth.py $DST
 
 
 #PYTHONPATH=$RYU $RYU/bin/ryu-manager $RYU/ryu/app/simple_hubswitch.py $1
-PYTHONPATH=$RYU $RYU/bin/ryu-manager $RYU/ryu/app/simple_hubswitch_tasks.py $1
+#PYTHONPATH=$RYU $RYU/bin/ryu-manager $RYU/ryu/app/simple_hubswitch_tasks.py $1
+PYTHONPATH=$RYU $RYU/bin/ryu-manager $RYU/ryu/app/simple_udp_auth.py $1

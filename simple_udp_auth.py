@@ -9,8 +9,11 @@ from ryu.controller.handler import (
 from ryu.ofproto import ofproto_v1_3
 from ryu.lib.packet import (
     packet,
-    ethernet
+    ethernet,
+    ipv4,
+    udp
 )
+from ryu.lib.packet import in_proto
 
 
 class SimpleUDPAuth(app_manager.RyuApp):
@@ -19,46 +22,121 @@ class SimpleUDPAuth(app_manager.RyuApp):
     def __init__(self, *args, **kwargs):
         super(SimpleUDPAuth, self).__init__(*args,**kwargs)
         
-        self.authHosts = {} # map host -> timeleft (time of expiry? time to remove access)
-        self.datapaths = {}
-        self.serverIPAddress = '10.0.0.2' # IP address that access is restricted to (the 'server')
-        self.serverMacAddress = 'mac'     # MAC address that access is restricted to (the 'server')
-    
+        self.authd_hosts = {}                            # map host -> timeleft (time of expiry? time to remove access)
+        self.server_ipv4_address = '10.0.0.2'            # IPv4 address that access is restricted to (the 'server')
+        self.server_ipv6_address = 'fe80::200:ff:fe00:2' # IPv6 address that access is restricted to (the 'server')
+        self.server_mac_address  = '00:00:00:00:00:02'   # MAC address that access is restricted to (the 'server')
+        self.server_known = True                         # declares a server has been defined, and addresses set
+        self.auth_port = 1332                            # UDP port to authenticate on
+        
+        self.datapaths = {}                              # dpid -> datapath
+        self.server_port = {}                            # dpid -> port number
+        
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
         """Runs when switches handshake with controller
           installs a default flow to out:CONTROLLER"""
         datapath = ev.msg.datapath
+        # ofproto = datapath.ofproto
+        # parser = datapath.ofproto_parser
+        
+        self.install_server_blocking(datapath)
+        self.install_udp_auth(datapath)
+        
+        # install accept ARP rule, priority x
+        # match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_ARP,arp_tpa=self.serverIPAddress);
+        # actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
+        # self.add_flow(datapath, 1, match, actions)
+        
+        
+    def set_server_address(self, server_mac, server_ipv4, server_ipv6):
+        self.server_mac_address  = server_mac
+        self.server_ipv4_address = server_ipv4
+        self.server_ipv6_address = server_ipv6
+    
+    def install_server_blocking(self, datapath):
+        ''' Blocking IP access to the server and allowing ARP '''
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         
+        action_block = [] # empty == block
         
+        # install block all to server rule (mac, ipv4, ipv6)
+        match_mac = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, eth_dst=self.server_mac_address);
+        match_ipv4 = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_dst=self.server_ipv4_address);
+        match_ipv6 = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IPV6, ipv6_dst=self.server_ipv6_address);
         
+        self.add_flow(datapath, 1, match_mac, action_block)
+        self.add_flow(datapath, 1, match_ipv4, action_block)
+        self.add_flow(datapath, 1, match_ipv6, action_block)
         
-        # # install a table-miss flow entry
-        # match = parser.OFPMatch();
-        # actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
-        # self.add_flow(datapath, 0, match, actions)
+        # allow ARP traffic flow?
         
-        '''
-            Obtain server's MAC address
-        '''
-        self.print_object(ev.msg)
+    def install_udp_auth(self, datapath):
+        # match for the UDP auth. packet
         
-        '''
-            Blocking access to the server
-        '''
-        # install accept ARP rule, priority x
-        match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_ARP,arp_tpa=self.serverIPAddress);
-        actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
-        self.add_flow(datapath, 1, match, actions)
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
         
-        # install block all to server rule, priority x-1
-        match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP,eth_dst=self.serverMacAddress);
-        actions = [parser.OFPActionOutput()]
-        self.add_flow(datapath, 1, match, actions)
-    
-    
+        match_udp_auth = parser.OFPMatch(
+            eth_type=ether_types.ETH_TYPE_IP, 
+            ip_proto=in_proto.IPPROTO_UDP,
+            # eth_dst= self.server_mac_address,
+            ipv4_dst= self.server_ipv4_address,
+            udp_dst= self.auth_port)
+        
+        # add a flow for UDP packet capture
+        action_packet_in = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
+        self.add_flow(datapath, 0, match_udp_auth, action_packet_in)
+            
+        
+        # # install allow ARP traffic, action: port_to_server..
+        # #   for now, ARP is carried via flood from controller.. but ideally this would have it's own flow.
+        # for dpid in datapaths:
+        #     server_port = self.server_port[dpid]
+        #     action_allow = [parser.OFPActionOutput(server_port)]
+        #     self.add_flow(datapaths[dpid], 1, match_udp_auth, action_allow)
+        
+            
+        
+    @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
+    def packet_in_handler(self, ev):
+        '''Listen for auth packets 
+            and server announcement'''
+        
+        msg = ev.msg
+        dp = msg.datapath
+        ofp = dp.ofproto
+        parser = dp.ofproto_parser
+        
+        pkt = packet.Packet(msg.data)
+        eth = pkt.get_protocols(ethernet.ethernet)[0]
+        
+        eth_type = eth.ethertype
+        print '(AUTH-packet_in) eth_type: %s' % self.eth_type_to_str(eth_type)
+        # self.print_object(msg)
+        
+        # capture auth packets
+        if eth_type == ether_types.ETH_TYPE_IP:
+            print ('is IP!')
+            # check UDP
+            # check port
+            # check destination
+            # add flow from src_mac 
+            
+            # alternatively, capture the OXM match for UDP port
+          
+        # print '(AUTH-packet_in) eth_src: %s' % eth.src
+        # print '(AUTH-packet_in) server: %s' % self.server_mac_address
+        # print '(AUTH-packet_in) equal?: %s' % (eth.src == self.server_mac_address)
+          
+        # get port_id of server
+        if eth.src == self.server_mac_address:
+            self.server_port[dp.id] = msg.match['in_port']
+            self.server_known = True
+            print '(AUTH-packet_in) server_port: %d' % msg.match['in_port']
+          
+          
     def add_flow(self, datapath, priority, match, actions, buffer_id=None):
         '''Adds this flow to the given datapath'''
         
@@ -72,20 +150,8 @@ class SimpleUDPAuth(app_manager.RyuApp):
         else:
             mod = parser.OFPFlowMod(datapath=datapath, priority=priority, 
                                     match=match, instructions=inst)
-        self.logger.debug("(AUTH) ADD FLOW: %s %s" % (match, actions))
+        self.logger.debug("(AUTH-add flow): %s %s" % (match, actions))
         datapath.send_msg(mod)
-    
-    
-    @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
-    def packet_in_handler(self, ev):
-        '''Listen for auth packets'''
-        
-        msg = ev.msg
-        dp = msg.datapath
-        ofp = dp.ofproto
-        parser = dp.ofproto_parser
-        
-        in_port = msg.match['in_port']
         
     def print_object(self, obj):
         ''' Prints all the attributes of a object
@@ -93,18 +159,20 @@ class SimpleUDPAuth(app_manager.RyuApp):
         attrs = vars(obj)
         print ', '.join("%s: %s" % item for item in attrs.items())
 
-app_manager.require_app('ryu.app.simple_hubswitch')
+    def eth_type_to_str(self, eth_type):
+        '''Given an eth_type hex value, return the eth_type name'''
+        return {
+            ether_types.ETH_TYPE_IP:        'ETH_TYPE_IP',
+            ether_types.ETH_TYPE_ARP:       'ETH_TYPE_ARP',
+            ether_types.ETH_TYPE_8021Q:     'ETH_TYPE_8021Q',
+            ether_types.ETH_TYPE_IPV6:      'ETH_TYPE_IPV6',
+            ether_types.ETH_TYPE_SLOW:      'ETH_TYPE_SLOW',
+            ether_types.ETH_TYPE_MPLS:      'ETH_TYPE_MPLS',
+            ether_types.ETH_TYPE_8021AD:    'ETH_TYPE_8021AD',
+            ether_types.ETH_TYPE_LLDP:      'ETH_TYPE_LLDP',
+            ether_types.ETH_TYPE_8021AH:    'ETH_TYPE_8021AH',
+            ether_types.ETH_TYPE_IEEE802_3: 'ETH_TYPE_IEEE802_3',
+            ether_types.ETH_TYPE_CFM:       'ETH_TYPE_CFM'
+        }.get(eth_type,"Type %x not found" % (eth_type))
 
-'''
-ETH_TYPE_IP         =  0x0800
-ETH_TYPE_ARP        =  0x0806
-ETH_TYPE_8021Q      =  0x8100
-ETH_TYPE_IPV6       =  0x86dd
-ETH_TYPE_SLOW       =  0x8809
-ETH_TYPE_MPLS       =  0x8847
-ETH_TYPE_8021AD     =  0x88a8
-ETH_TYPE_LLDP       =  0x88cc
-ETH_TYPE_8021AH     =  0x88e7
-ETH_TYPE_IEEE802_3  =  0x05dc
-ETH_TYPE_CFM        =  0x8902
-'''
+app_manager.require_app('ryu.app.simple_hubswitch')
