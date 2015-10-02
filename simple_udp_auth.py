@@ -93,7 +93,7 @@ class SimpleUDPAuth(app_manager.RyuApp):
         attrs = vars(obj)
         print ', '.join("%s: %s" % item for item in attrs.items())
 
-app_manager.require_app('ryu.app.simple_hubswitch_tasks')
+app_manager.require_app('ryu.app.simple_hubswitch')
 
 '''
 ETH_TYPE_IP         =  0x0800
