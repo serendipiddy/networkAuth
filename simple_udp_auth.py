@@ -1,4 +1,4 @@
-import ryu.lib.packet.ether_types
+from ryu.lib.packet import ether_types
 from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller.handler import (
