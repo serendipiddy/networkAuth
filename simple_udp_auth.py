@@ -87,7 +87,7 @@ class SimpleUDPAuth(app_manager.RyuApp):
         
         in_port = msg.match['in_port']
         
-    def print_object(self, obj);
+    def print_object(self, obj):
         ''' Prints all the attributes of a object
             http://stackoverflow.com/a/5969930 '''
         attrs = vars(obj)
