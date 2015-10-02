@@ -43,7 +43,7 @@ class SimpleUDPAuth(app_manager.RyuApp):
         '''
             Obtain server's MAC address
         '''
-        print_object(ev.msg)
+        self.print_object(ev.msg)
         
         '''
             Blocking access to the server
