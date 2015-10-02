@@ -32,10 +32,18 @@ class SimpleUDPAuth(app_manager.RyuApp):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         
+        
+        
+        
         # # install a table-miss flow entry
         # match = parser.OFPMatch();
         # actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
         # self.add_flow(datapath, 0, match, actions)
+        
+        '''
+            Obtain server's MAC address
+        '''
+        print_object(ev.msg)
         
         '''
             Blocking access to the server
@@ -43,12 +51,12 @@ class SimpleUDPAuth(app_manager.RyuApp):
         # install accept ARP rule, priority x
         match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_ARP,arp_tpa=self.serverIPAddress);
         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
-        self.add_flow(datapath, 9, match, actions)
+        self.add_flow(datapath, 1, match, actions)
         
         # install block all to server rule, priority x-1
         match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP,eth_dst=self.serverMacAddress);
         actions = [parser.OFPActionOutput()]
-        self.add_flow(datapath, 9, match, actions)
+        self.add_flow(datapath, 1, match, actions)
     
     
     def add_flow(self, datapath, priority, match, actions, buffer_id=None):
@@ -79,7 +87,11 @@ class SimpleUDPAuth(app_manager.RyuApp):
         
         in_port = msg.match['in_port']
         
-        
+    def print_object(self, obj);
+        ''' Prints all the attributes of a object
+            http://stackoverflow.com/a/5969930 '''
+        attrs = vars(obj)
+        print ', '.join("%s: %s" % item for item in attrs.items())
 
 app_manager.require_app('ryu.app.simple_hubswitch_tasks')
 

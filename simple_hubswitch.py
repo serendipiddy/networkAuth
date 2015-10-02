@@ -48,7 +48,7 @@ class SimpleHubSwitch(app_manager.RyuApp):
         # install a table-miss flow entry
         match = parser.OFPMatch();
         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
-        self.add_flow(datapath, 9, match, actions)
+        self.add_flow(datapath, 0, match, actions)
         
     def add_flow(self, datapath, priority, match, actions, buffer_id=None):
         '''Adds this flow to the given datapath'''
@@ -85,7 +85,7 @@ class SimpleHubSwitch(app_manager.RyuApp):
           match = parser.OFPMatch(in_port=in_port)
           actions = [parser.OFPActionOutput(ofp.OFPP_FLOOD)]
           
-          self.add_flow(dp, 10, match, actions)
+          self.add_flow(dp, 1, match, actions)
           
           return
           
