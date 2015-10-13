@@ -74,8 +74,7 @@ class SimpleUDPAuth(app_manager.RyuApp):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         
-        # allow ARP to server
-        match_arp_host_ipv4 = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_ARP, ipv4_dst=self.server_ipv4_address);
+        action_packet_in = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
         
         # send UDP on port X to controller
         match_udp_auth_ipv4 = parser.OFPMatch(
@@ -92,7 +91,6 @@ class SimpleUDPAuth(app_manager.RyuApp):
             udp_dst= self.auth_port)
         
         # add a flow for UDP packet capture
-        action_packet_in = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
         self.add_flow(datapath, 2, match_udp_auth_ipv4, action_packet_in)
         self.add_flow(datapath, 2, match_udp_auth_ipv6, action_packet_in)
             
@@ -118,25 +116,6 @@ class SimpleUDPAuth(app_manager.RyuApp):
           # set_server_address()
           # set server port for this datapath
         
-        # # install rule to allow ARP traffic, action: port_to_server
-        # if self.server_known and eth.src != self.server_mac_address and eth_type == ether_types.ETH_TYPE_ARP:
-            # arp = pkt.get_protocols(ARP.arp)
-            # print ('(AUTH-packet_in) is ARP from %s to %s' % (eth.src,eth.dst))
-            # if (arp.op == ARP.ARP_REQUEST and arp.tpa == self.server_ipv4_address):
-                # server_out_port = self.server_port[dp.id]
-                # action_allow = [parser.OFPActionOutput(server_out_port)]
-                # match_arp_host_ipv4 = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_ARP, ipv4_dst=self.server_ipv4_address);
-                # print('(AUTH-packet_in) installing ARP flow for %s to %s' % (arp.spa,arp.tpa))
-                # self.add_flow(dp, 1, match_arp_host_ipv4, action_allow)
-                # return
-                # # for dpid in self.datapaths:
-                    # # self.add_flow(self.datapaths[dpid], 1, match_udp_auth, action_allow)
-        
-        # install rule to allow ipv6 network discovery traffic, action: port_to_server
-        # if self.server_known and eth.src != self.server_mac_address and eth_type == ether_types.ETH_TYPE_IP:
-            # match_arp_host_ipv6 = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_ARP, ipv6_dst=self.server_ipv6_address);
-            # self.add_flow(dp, 1, match_arp_host_ipv6, action_allow)
-        
         # capture auth packets
         if eth_type == ether_types.ETH_TYPE_IP:
             print ('(AUTH-packet_in) is IP!')
@@ -161,7 +140,7 @@ class SimpleUDPAuth(app_manager.RyuApp):
             print '(AUTH-packet_in) server_port: %d' % msg.match['in_port']
             return
         
-          
+    
           
     def add_flow(self, datapath, priority, match, actions, buffer_id=None):
         '''Adds this flow to the given datapath'''
