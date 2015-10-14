@@ -1,4 +1,3 @@
-from ryu.lib.packet import ether_types
 from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller.handler import (
@@ -7,15 +6,18 @@ from ryu.controller.handler import (
     set_ev_cls
 )
 from ryu.ofproto import ofproto_v1_3
+from ryu.ofproto import ofproto_v1_3_parser
+from ryu.lib import type_desc
 from ryu.lib.packet import (
+    in_proto, # ipv4 layer 3 protocols
     packet,
     ethernet,
+    ether_types,
     ipv4,
     ipv6,
     arp as ARP,
     udp as UDP
 )
-from ryu.lib.packet import in_proto
 from netaddr import IPAddress
 
 
@@ -46,11 +48,12 @@ class SimpleUDPAuth(app_manager.RyuApp):
         self.install_server_blocking(datapath)
         self.install_udp_auth(datapath)
         
-        
     def set_server_address(self, server_mac, server_ipv4, server_ipv6):
         self.server_mac_address  = server_mac
         self.server_ipv4_address = server_ipv4
         self.server_ipv6_address = server_ipv6
+        # flush existing flows to for server
+        return
     
     def install_server_blocking(self, datapath):
         ''' Blocking IP access to the server and allowing ARP '''
@@ -93,7 +96,32 @@ class SimpleUDPAuth(app_manager.RyuApp):
         # add a flow for UDP packet capture
         self.add_flow(datapath, 2, match_udp_auth_ipv4, action_packet_in)
         self.add_flow(datapath, 2, match_udp_auth_ipv6, action_packet_in)
-            
+          
+    def auth_host(self, host_ip, host_mac, datapath):
+        ''' Allows given host to access the server '''
+        
+        # add host to authenticated hosts
+        self.authd_hosts[host_mac] = 10000
+        
+        ryu_mac = type_desc.MacAddr.from_user(host_mac)
+        
+        # add rules for mac to access server
+        match_ipv4 = ofproto_v1_3_parser.OFPMatch()
+        match_ipv4.append_field(ofproto_v1_3.OXM_OF_ETH_TYPE, ether_types.ETH_TYPE_IP)
+        match_ipv4.append_field(ofproto_v1_3.OXM_OF_ETH_SRC, ryu_mac)
+        match_ipv4.append_field(ofproto_v1_3.OXM_OF_IPV4_DST, int(self.server_ipv4_address))
+        
+        match_ipv6 = ofproto_v1_3_parser.OFPMatch()
+        match_ipv6.append_field(ofproto_v1_3.OXM_OF_ETH_TYPE, ether_types.ETH_TYPE_IPV6)
+        match_ipv6.append_field(ofproto_v1_3.OXM_OF_ETH_SRC, ryu_mac)
+        match_ipv6.append_field(ofproto_v1_3.OXM_OF_IPV6_DST, self.server_ipv6_address.words)
+        
+        action_allow_to_server = [ofproto_v1_3_parser.OFPActionOutput(self.server_port[datapath.id])]
+        
+        self.add_flow(datapath, 3, match_ipv4, action_allow_to_server)
+        self.add_flow(datapath, 3, match_ipv6, action_allow_to_server)
+        print ('(AUTH-auth authenicated %s' % host_mac)
+        
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def packet_in_handler(self, ev):
         '''Listen for auth packets 
@@ -108,8 +136,6 @@ class SimpleUDPAuth(app_manager.RyuApp):
         eth = pkt.get_protocols(ethernet.ethernet)[0]
         
         eth_type = eth.ethertype
-        print '(AUTH-packet_in) eth_type: %s' % self.eth_type_to_str(eth_type)
-        # self.print_object(msg)
         
         # ''' register the server '''
         # if (broadcast and matches server key): 
@@ -118,26 +144,20 @@ class SimpleUDPAuth(app_manager.RyuApp):
         
         # capture auth packets
         if eth_type == ether_types.ETH_TYPE_IP:
-            print ('(AUTH-packet_in) is IP!')
-            
-            ip = pkt.get_protocols(ipv4.ipv4)
-            # check UDP
-            # check port
-            # check destination
-            # add flow from src_mac 
-            
-            # alternatively, capture the OXM match for UDP port
+            ip = pkt.get_protocols(ipv4.ipv4)[0]
+            if ip.proto == in_proto.IPPROTO_UDP and ip.dst == str(self.server_ipv4_address):
+                udp = pkt.get_protocols(UDP.udp)[0]
+                
+                if udp.dst_port == self.auth_port:
+                    print ('(AUTH-auth packet received from %s' % ip.src)
+                    self.auth_host(ip.src, eth.src, dp)
             return
-          
-        # print '(AUTH-packet_in) eth_src: %s' % eth.src
-        # print '(AUTH-packet_in) server: %s' % self.server_mac_address
-        # print '(AUTH-packet_in) equal?: %s' % (eth.src == self.server_mac_address)
           
         # get port_id of server
         if eth.src == self.server_mac_address:
             self.server_port[dp.id] = msg.match['in_port']
             self.server_known = True
-            print '(AUTH-packet_in) server_port: %d' % msg.match['in_port']
+            print '(AUTH-packet_in) %d\'s server_port: %d' % (dp.id, msg.match['in_port'])
             return
         
     
@@ -179,5 +199,25 @@ class SimpleUDPAuth(app_manager.RyuApp):
             ether_types.ETH_TYPE_IEEE802_3: 'ETH_TYPE_IEEE802_3',
             ether_types.ETH_TYPE_CFM:       'ETH_TYPE_CFM'
         }.get(eth_type,"Type %x not found" % (eth_type))
+        
+    def ip_proto_to_str(self, ip_proto):
+        ''' Given an ip_proto number, returns the protocol name '''
+        return {
+            in_proto.IPPROTO_IP:        'IPPROTO_IP',
+            in_proto.IPPROTO_HOPOPTS:   'IPPROTO_HOPOPTS',
+            in_proto.IPPROTO_ICMP:      'IPPROTO_ICMP',
+            in_proto.IPPROTO_IGMP:      'IPPROTO_IGMP',
+            in_proto.IPPROTO_TCP:       'IPPROTO_TCP',
+            in_proto.IPPROTO_UDP:       'IPPROTO_UDP',
+            in_proto.IPPROTO_ROUTING:   'IPPROTO_ROUTING',
+            in_proto.IPPROTO_FRAGMENT:  'IPPROTO_FRAGMENT',
+            in_proto.IPPROTO_AH:        'IPPROTO_AH',
+            in_proto.IPPROTO_ICMPV6:    'IPPROTO_ICMPV6',
+            in_proto.IPPROTO_NONE:      'IPPROTO_NONE',
+            in_proto.IPPROTO_DSTOPTS:   'IPPROTO_DSTOPTS',
+            in_proto.IPPROTO_OSPF:      'IPPROTO_OSPF',
+            in_proto.IPPROTO_VRRP:      'IPPROTO_VRRP',
+            in_proto.IPPROTO_SCTP:      'IPPROTO_SCTP'
+        }.get(ip_proto,"Type %x not found" % (ip_proto))
 
 app_manager.require_app('ryu.app.simple_hubswitch')
