@@ -120,7 +120,7 @@ class SimpleUDPAuth(app_manager.RyuApp):
         
         self.add_flow(datapath, 3, match_ipv4, action_allow_to_server)
         self.add_flow(datapath, 3, match_ipv6, action_allow_to_server)
-        print ('(AUTH-auth authenicated %s' % host_mac)
+        print ('(AUTH-auth authenicated %s on dpid:%s' % (host_mac,datapath.id))
         
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def packet_in_handler(self, ev):
