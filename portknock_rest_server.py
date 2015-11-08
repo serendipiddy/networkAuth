@@ -1,6 +1,6 @@
-from ryu.app.wsgi import ControllerBase, WSGIApplication
+from ryu.app.wsgi import ControllerBase, route 
 from webob import Response
-import json
+import json, random, binascii
 
 ''' 
     Companion server to port knocking, 
@@ -13,40 +13,62 @@ import json
 # POST /portknock/add_key
 # DELETE /portknock/host/<host_ip>
 
+restpath = '/portknock'
 class Portknock_Server(ControllerBase):
     def __init__(self, req, link, data, **config):
         super(Portknock_Server, self).__init__(req, link, data, **config)
-        self.keylength = data['key_length']
-        self.path = '/portknock'
+        self.port_knocking = data['port_knocking']
+        self.key_length = self.port_knocking.key_length
+        self.seq_size = self.port_knocking.seq_size
+        
+        print('key_length %d' % self.key_length)
     
     def create_key(self):
-        key = 'A04E35'
+        print('create key')
+        key = generate_key(self.key_length, self.seq_size)
+        
         self.add_key(key)
         body = json.dumps({'key':key})
         return Response(content_type='application/json', body=body)
         
     def add_key(self, key):
-        
+        self.port_knocking
     
-     def __init__(self, *args, **kwargs):
-        super(RestPkApi, self).__init__(*args, **kwargs)
-        
-        
-    @route("portknock", url+"/switches", methods=["GET"])
+    # @route("portknock", self.path+"/", methods=["GET"])
+    @route("portknock", restpath, methods=["GET"])
     def get_switch_list(self, req, **kwargs):
-        body = json.dumps(self.acl_switch_inst.get_switches())
+        body = json.dumps(self.create_key(self))
         return Response(content_type="application/json", body=body)
 
+    def generate_key(num_digits, seq_size):
+        ''' generates a key for authorising 
+              seq_size <= 8
+              num_digits  < 2**seq_size '''
+        key_len = 16 - seq_size
+        if num_digits > 2**seq_size: 
+            print('(KEYGEN-error) length (%d) too long for max seq (%d)' % (num_digits, 2**seq_size)) 
+            return
         
-    def generate_key(length):
-        new_mac = list()
-        
-        while (not new_mac) or (new_mac in existing_macs):
-            new_mac = list()
-            for i in range(6):
-                a = bytearray(random.getrandbits(8) for i in range(1))
-                new_mac.append(binascii.b2a_hex(a))
+        port_seq = list()
+        print(key_len)
+        for i in range(num_digits):
+            port = []
+            if (key_len > 8):
+              a = bytearray(random.getrandbits(key_len-8) for x in range(1))
+              port.append(binascii.b2a_hex(a))
+            else:
+              a = 0
+            b = bytearray(random.getrandbits(8) for x in range(1))
+            port.append(binascii.b2a_hex(b))
+              
+            key = int(''.join(port),16)
             
-            new_mac = ':'.join(new_mac)
+            pnum = (i << key_len) + key
+            # print('seq: %3d, key: %5d, port: %d' % (i, key,pnum))
+            # print('seq  {0:0>16b}'.format(i << key_len))
+            # print('key  {0:0>16b}'.format(key))
+            # print('port {0:0>16b}'.format(pnum))
+            
+            port_seq.append(pnum)
         
-        return new_mac
+        return port_seq

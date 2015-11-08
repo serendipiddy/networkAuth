@@ -9,10 +9,11 @@ RYU="/home/mininet/ryu"
 cp $SRC/simple_hubswitch_class.py $DST
 cp $SRC/error_parser.py $DST
 #cp $SRC/simple_udp_auth.py $DST
-cp $SRC/simple_udp_auth_wSwitching.py $DST
+cp $SRC/simple_tcp_auth_wSwitching.py $DST
+cp $SRC/portknock_rest_server.py $DST
 
 
 #PYTHONPATH=$RYU $RYU/bin/ryu-manager $RYU/ryu/app/simple_hubswitch.py $1
 #PYTHONPATH=$RYU $RYU/bin/ryu-manager $RYU/ryu/app/simple_hubswitch_tasks.py $1
 #PYTHONPATH=$RYU $RYU/bin/ryu-manager $RYU/ryu/app/simple_udp_auth.py $1
-PYTHONPATH=$RYU $RYU/bin/ryu-manager $RYU/ryu/app/simple_udp_auth_wSwitching.py $1
+PYTHONPATH=$RYU $RYU/bin/ryu-manager $RYU/ryu/app/simple_tcp_auth_wSwitching.py $1

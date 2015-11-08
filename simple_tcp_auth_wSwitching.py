@@ -20,7 +20,8 @@ from ryu.lib.packet import (
 )
 from netaddr import IPAddress
 from ryu.app.simple_hubswitch_class import SimpleHubSwitch # packet switching logic
-from portknock_rest_server import Portknock_Server
+from ryu.app.portknock_rest_server import Portknock_Server
+from ryu.app.wsgi import WSGIApplication
 
 num_port_bits = 16
 def get_seq_len(key_length):
@@ -33,12 +34,10 @@ def get_seq_len(key_length):
 
 class Port_Knocking(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
-     _CONTEXTS = {"wsgi":WSGIApplication}
+    _CONTEXTS = {"wsgi":WSGIApplication}
     
     def __init__(self, *args, **kwargs):
         super(Port_Knocking, self).__init__(*args,**kwargs)
-        
-        self.switching = SimpleHubSwitch()
         
         ## server location
         self.server_known = False                                   # declares a server has been defined, and addresses set
@@ -61,9 +60,10 @@ class Port_Knocking(app_manager.RyuApp):
         self.blocked_hosts = {}   # Hosts who entered incorrect key; host_ip -> timeout ## may not implement atm
         self.default_time  = 1800 # seconds till invalid (3600 == one hour)
         
+        # get/register other classes
+        self.switching = SimpleHubSwitch()
         wsgi = kwargs['wsgi']
-        wsgi.register(portknock_rest_server.Portknock_Server, {pork_knocking : self})
-        
+        wsgi.register(Portknock_Server, {'port_knocking' : self})
         
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
