@@ -20,27 +20,67 @@ class Portknock_Server(ControllerBase):
         self.port_knocking = data['port_knocking']
         self.key_length = self.port_knocking.key_length
         self.seq_size = self.port_knocking.seq_size
+    
+    def get_portknocking_info(self):
+        ''' information on the current state of the port knocking server '''
+        rv = {}
         
-        print('key_length %d' % self.key_length)
+        server = {}
+        server['ipv4'] = str(self.port_knocking.server_ipv4_address)
+        server['ipv6'] = str(self.port_knocking.server_ipv6_address)
+        rv['server'] = server
+        
+        hosts = {}
+        hosts['authenticated_hosts'] = self.port_knocking.authenticated_hosts
+        hosts['authenticating_hosts'] = self.port_knocking.authing_hosts
+        hosts['blocked_hosts'] = self.port_knocking.blocked_hosts
+        rv['hosts'] = hosts
+        
+        keys = {}
+        keys['auth_port'] = self.port_knocking.auth_port
+        keys['active_keys'] = self.port_knocking.active_keys
+        keys['key_length'] = self.port_knocking.key_length
+        keys['seq_size'] = self.port_knocking.seq_size
+        rv['keys'] = keys
+        
+        return rv
     
     def create_key(self):
-        print('create key')
-        key = generate_key(self.key_length, self.seq_size)
+        data = self.generate_key(self.key_length, self.seq_size)
         
-        self.add_key(key)
-        body = json.dumps({'key':key})
-        return Response(content_type='application/json', body=body)
+        while not self.port_knocking.add_auth_key(data['keys']):
+            data = self.generate_key(self.key_length, self.seq_size)
         
-    def add_key(self, key):
-        self.port_knocking
-    
-    # @route("portknock", self.path+"/", methods=["GET"])
+        return data
+      
+    def get_page(self, page):
+        try:
+            fd = open(page,'r')
+        except IOError:
+          return '<head><title>Error</title></head><body><p>cannot open %s</p></body></html>' % page
+          
+        file = fd.read()
+        fd.close()
+        return file
+        
     @route("portknock", restpath, methods=["GET"])
-    def get_switch_list(self, req, **kwargs):
-        body = json.dumps(self.create_key(self))
+    def get_index(self, req, **kwargs):
+        body = self.get_page('html/index.html')
+        return Response(content_type="text/html", body=body)
+      
+    @route("portknock", restpath+'/info', methods=["GET"])
+    def get_portknock_info(self, req, **kwargs):
+        body = json.dumps(self.get_portknocking_info())
+        return Response(content_type="application/json", body=body)
+        
+    @route("portknock", restpath+'/create_key', methods=["POST"])
+    def get_portknock_key(self, req, **kwargs):
+        keys = self.create_key()
+        
+        body = json.dumps(keys['ports'])
         return Response(content_type="application/json", body=body)
 
-    def generate_key(num_digits, seq_size):
+    def generate_key(self, num_digits, seq_size):
         ''' generates a key for authorising 
               seq_size <= 8
               num_digits  < 2**seq_size '''
@@ -49,8 +89,9 @@ class Portknock_Server(ControllerBase):
             print('(KEYGEN-error) length (%d) too long for max seq (%d)' % (num_digits, 2**seq_size)) 
             return
         
+        key_seq = list()
         port_seq = list()
-        print(key_len)
+        
         for i in range(num_digits):
             port = []
             if (key_len > 8):
@@ -68,7 +109,8 @@ class Portknock_Server(ControllerBase):
             # print('seq  {0:0>16b}'.format(i << key_len))
             # print('key  {0:0>16b}'.format(key))
             # print('port {0:0>16b}'.format(pnum))
-            
+            key_seq.append({'seq':i,'value':key,'port':pnum})
             port_seq.append(pnum)
         
-        return port_seq
+        return {'ports':port_seq,'keys':key_seq}
+        

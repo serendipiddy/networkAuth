@@ -15,8 +15,8 @@ from ryu.lib.packet import (
     ether_types,
     ipv4,
     ipv6,
-    arp as ARP
-    # udp as UDP
+    arp as ARP,
+    tcp as TCP
 )
 from netaddr import IPAddress
 from ryu.app.simple_hubswitch_class import SimpleHubSwitch # packet switching logic
@@ -65,6 +65,13 @@ class Port_Knocking(app_manager.RyuApp):
         wsgi = kwargs['wsgi']
         wsgi.register(Portknock_Server, {'port_knocking' : self})
         
+        # testing key
+        self.add_auth_key([
+            {"value": 1489, "seq": 0,"port": 1489},
+            {"value": 15961,"seq": 1,"port": 32345},
+            {"value": 8637, "seq": 2,"port": 41405},
+            {"value": 2929, "seq": 3,"port": 52081}])
+        
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
         """Runs when switches handshake with controller
@@ -86,35 +93,43 @@ class Port_Knocking(app_manager.RyuApp):
         # flush existing flows to for server
         return
         
-    def add_auth_key(self, key):
-        ''' Keys are a given as a string of hexadecimal values, 
-              each pair of letters corresponds to a port number '''
-        
-        port_list = []
-        
-        n = 0
-        while n < len(key)-2:
-            port_list.append(int(key[n:n+2],16))
-            n += 2
-            
-        for port in port_list:
-            # check they're valid
-            idx     = port >> (num_port_bits - self.seq_size)
-            key_val = port << (num_port_bits - self.seq_size)
-            
-            if idx >= 2**self.seq_size:
-                print('(AUTH-addkey) invalid key %s, seq %d is too large' % (key,idx))
-                return
-        
+    def add_auth_key(self, key_list):
+        ''' Keys are a given as a list of (seq, key) values, 
+              each pair of letters corresponds to a port number 
+              first is used as the key's ID
+              return true is no key conflict, false if key_id exists  '''
         if len(key_list) != self.key_length:
-            print('(AUTH-addkey) invalid key %s, too long (%d)' % key)
+            print('(AUTH-addkey) invalid key list, too long (%d!=%d)' % len(key_list),self.key_length)
+            return True
+            
+        if len(key_list) > 2**self.seq_size:
+            print('(AUTH-addkey) invalid key, longer than max sequence (%d > %d)' % (len(key_list),2**self.seq_size))
+            return True # to avoid infinite loop
         
-        self.active_keys
-        print('(AUTH-addkey) Added key %s' % key)
+        idx = 0
+        for k in key_list:
+            # check they're valid and in order
+            n = k['seq']
+            val = k['value']
+            if val > 2**(num_port_bits - self.seq_size):
+                print('(AUTH-addkey) invalid value %d at key[%d] -- too large! (>%d)' % (val,n,2**(num_port_bits - self.seq_size)))
+                return True
+            idx+=1
+            
+        # check key_id doesn't exist already
+        if key_list[0]['value'] in self.active_keys:
+            return False
         
-    def get_active_keys(self):
-        ''' Returns the keys that a host can enter '''
-        return self.active_keys.copy()
+        auth_key = []
+        auth_ports = []
+        for k in key_list:
+            print('%d: %d -> %d' % (k['port'], k['seq'], k['value']))
+            auth_key.append(k['value'])
+            auth_ports.append(k['port'])
+        
+        self.active_keys[auth_key[0]] = {'key': auth_key,'port': auth_ports}
+        print('(AUTH-addkey) Added key %s' % auth_key)
+        return True
     
     def install_server_blocking_flows(self, datapath):
         ''' Blocking IP access to the server and allowing ARP '''
@@ -158,7 +173,7 @@ class Port_Knocking(app_manager.RyuApp):
         self.add_flow(datapath, 2, match_tcp_auth_ipv4, action_packet_in)
         self.add_flow(datapath, 2, match_tcp_auth_ipv6, action_packet_in)
           
-    def auth_host(self, host_ip, datapath):
+    def auth_host(self, src_ip, datapath):
         ''' Allows given host to access the server '''
         
         action_allow_to_server = [ofproto_v1_3_parser.OFPActionOutput(self.server_port[datapath.id])]
@@ -166,7 +181,7 @@ class Port_Knocking(app_manager.RyuApp):
         # add rules for mac to access server
         match_ipv4 = ofproto_v1_3_parser.OFPMatch()
         match_ipv4.append_field(ofproto_v1_3.OXM_OF_ETH_TYPE, ether_types.ETH_TYPE_IP)
-        match_ipv4.append_field(ofproto_v1_3.OXM_OF_IPV4_SRC, host_ip)
+        match_ipv4.append_field(ofproto_v1_3.OXM_OF_IPV4_SRC, int(IPAddress(src_ip)))
         match_ipv4.append_field(ofproto_v1_3.OXM_OF_IPV4_DST, int(self.server_ipv4_address))
         self.add_flow(datapath, 3, match_ipv4, action_allow_to_server)
         
@@ -177,14 +192,14 @@ class Port_Knocking(app_manager.RyuApp):
         # match_ipv6.append_field(ofproto_v1_3.OXM_OF_IPV6_DST, self.server_ipv6_address.words)
         # self.add_flow(datapath, 3, match_ipv6, action_allow_to_server)
         
-        print ('(AUTH-auth authenicated id:%s on dpid:%s' % (host_ip, datapath.id))
+        print ('(AUTH-auth authenicated id:%s on dpid:%s' % (src_ip, datapath.id))
         
     def match_key(self, src_ip, dst_port, datapath):
         ''' Matches the sequence of knocks against buffered key '''
               
-        key_id  = self.authing_hosts[src_ip][0]
+        print('dst port %d' % dst_port)
         idx     = dst_port >> (num_port_bits - self.seq_size)
-        key_val = dst_port << (num_port_bits - self.seq_size)
+        key_val = dst_port & (2**(num_port_bits - self.seq_size)) - 1
         
         if (idx > self.key_length) or (idx < 0): 
             self.invalid_key('Key sequence number out of bounds')
@@ -193,9 +208,17 @@ class Port_Knocking(app_manager.RyuApp):
         if len(self.authing_hosts[src_ip]) == 0:
             # first sequence key
             if idx != 0: return # don't accept anything until key is selected
+            else: key_id = key_val
+        else:
+            key_id  = self.authing_hosts[src_ip][0]
         
-        if self.active_keys[key_id][idx] != key_val: # check they match
-            self.invalid_key('value %d doesn\'t match key idx %d of key %d' % (key_val, idx, key_id))
+        if key_id not in self.active_keys:
+            self.invalid_key('Key id not valid %d' % (key_id))
+            remove_key(src_ip)
+            return 
+        
+        if self.active_keys[key_id]['key'][idx] != key_val: # check they match
+            self.invalid_key('value %d doesn\'t match key idx %d of key %d (%d)' % (key_val, idx, key_id, self.active_keys[key_id]['key'][idx]))
             return
             
         if idx not in self.authing_hosts[src_ip]:
@@ -204,35 +227,50 @@ class Port_Knocking(app_manager.RyuApp):
         
         if len(self.authing_hosts[src_ip]) == self.key_length:
             # key complete, authorise IP address to access server
-            print('(AUTH-seq complete) ip:%s' % host_ip)
+            print('(AUTH-seq complete) ip:%s' % src_ip)
+            
             # add host to authenticated hosts
             self.authenticated_hosts[src_ip] = 10000
+            
+            # tidy up
             del self.authing_hosts[src_ip]
             del self.active_keys[key_id]
+            # self.remove_authing_flows(src_ip) # redundant, is replaced with allow flow
             
             # install flows to access server
-            auth_host(self, src_ip, datapath)
+            self.auth_host(src_ip, datapath)
         else:
-            print('(AUTH-buffered) length: %d/%d' % (len(self.authing_hosts[src_ip]),self.key_length))
+            print('(AUTH-buffered) %s length: %d/%d' % (src_ip, len(self.authing_hosts[src_ip]),self.key_length))
         
     def invalid_key(self, msg=''):
         # TODO: block for a few seconds
-        print('(AUTH-invalid key)%s' % msg)
+        # TODO: release authing key from host?
+        print('(AUTH-invalid key) %s' % msg)
+    
+    def remove_key(self, src_ip):
+        ''' expired keys are disassociated from host '''
+        del self.authing_hosts[src_ip]
     
     def initialise_host_auth(self, src_ip, datapath):
-        print ('(AUTH-auth init received from %s' % ip.src)
-        self.authing_hosts[src_ip] = [] # empty key buffer
+        print ('(AUTH-auth init) received init from %s' % src_ip)
+        self.authing_hosts[src_ip] = {} # empty key buffer
         
         # install flow, fwd all tcp to controller TODO
-        action_fwd_to_controller = [ofproto_v1_3_parser.OFPActionOutput(self.server_port[ofproto.OFPP_CONTROLLER])]
+        action_fwd_to_controller = [ofproto_v1_3_parser.OFPActionOutput(ofproto_v1_3.OFPP_CONTROLLER)]
         match_ipv4 = ofproto_v1_3_parser.OFPMatch()
         match_ipv4.append_field(ofproto_v1_3.OXM_OF_ETH_TYPE, ether_types.ETH_TYPE_IP)
-        match_ipv4.append_field(ofproto_v1_3.OXM_OF_IPV4_SRC, host_ip)
+        match_ipv4.append_field(ofproto_v1_3.OXM_OF_IPV4_SRC, int(IPAddress(src_ip)))
         match_ipv4.append_field(ofproto_v1_3.OXM_OF_IPV4_DST, int(self.server_ipv4_address))
         
         self.add_flow(datapath, 3, match_ipv4, action_fwd_to_controller)
         
-    # def remove_authing_flows(self,):
+    def remove_authing_flows(self,src_ip):
+        ''' removes the flows that capture knock sequence '''
+        match_ipv4 = ofproto_v1_3_parser.OFPMatch()
+        match_ipv4.append_field(ofproto_v1_3.OXM_OF_IPV4_SRC, int(IPAddress(src_ip)))
+        
+        for id, dp in self.datapaths:
+            self.delete_flow(dp, 3, match_ipv4)
     
     def set_datapath_svr_port(self, dpid, in_port):
         if dpid in self.server_port and self.server_port[dpid] == in_port:
@@ -265,7 +303,6 @@ class Port_Knocking(app_manager.RyuApp):
         
         # capture auth packets
         if eth_type == ether_types.ETH_TYPE_IP:
-        
             # if TCP and dst is server
             # ipv4
             ip = pkt.get_protocols(ipv4.ipv4)[0]
@@ -280,13 +317,17 @@ class Port_Knocking(app_manager.RyuApp):
                     return
                 
                 elif ip.src in self.authing_hosts:
-                    self.match_key(ip.src, dst_port, dp)
+                    self.match_key(ip.src, tcp.dst_port, dp)
                 
                 elif tcp.dst_port == self.auth_port:
                     # install key matching flows for host
                     self.initialise_host_auth(ip.src, dp)
                     
                 return # avoid installing flow (block TCP traffic to server)
+            if ip.dst == str(self.server_ipv4_address):
+                # avoids controller forwarding on other IP packets while ALL TO CONTROLLER is active
+                return
+                
             # ipv6 version (TODO)
         if eth_type == ether_types.ETH_TYPE_IPV6:
             ip = pkt.get_protocols(ipv6.ipv6)[0]
@@ -308,12 +349,22 @@ class Port_Knocking(app_manager.RyuApp):
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,actions)]
         if buffer_id:
             mod = parser.OFPFlowMod(datapath=datapath, buffer_id=buffer_id,
-                                    priority=priority, match=match,
-                                    instructions=inst)
+                                    priority=priority, match=match, instructions=inst)
         else:
             mod = parser.OFPFlowMod(datapath=datapath, priority=priority, 
                                     match=match, instructions=inst)
         self.logger.debug("(AUTH-add flow): %s %s" % (match, actions))
+        datapath.send_msg(mod)
+        
+    def delete_flow(self, datapath, priority, match):
+        ''' This method is stolen from Jarrod :P '''
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        command = ofproto.OFPFC_DELETE_STRICT
+        mod = parser.OFPFlowMod(datapath=datapath, command=command,
+                                priority=priority, match=match,
+                                out_port=ofproto.OFPP_ANY,
+                                out_group=ofproto.OFPG_ANY)
         datapath.send_msg(mod)
         
     def print_object(self, obj):
@@ -358,4 +409,7 @@ class Port_Knocking(app_manager.RyuApp):
             in_proto.IPPROTO_SCTP:      'IPPROTO_SCTP'
         }.get(ip_proto,"Type %x not found" % (ip_proto))
 
+def convert_key_to_port(key, seq, seq_size):
+    key_len = 16 - seq_size
+    return (seq << key_len) + key
 # nop
