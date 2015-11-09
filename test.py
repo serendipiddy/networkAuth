@@ -8,6 +8,7 @@ help = '''
   Test suite for port knocking application
       -auth full  # complete auth
       -auth init  # only send init port 
+      -auth noid  # all but first
       -auth first # only send init and first knock 
       -auth last  # send all except last knock
       -auth rev   # reverses auth sequence (attempts n times)
@@ -29,7 +30,9 @@ DEFAULT_SEQ = [1489, 32345, 41405, 52081]
 SERVER = '10.0.0.2'
 SERVER_MAC = '00:00:00:00:00:02'
 KNOCK_FILE = 'test_keys.txt'
+INVALID_KNOCK= [7119, 21393, 36101, 59835]
 keys = []
+# keys 0-9 are correct, key 10 is incorrect
 server = 'h2'
 timeout = 1
 
@@ -110,7 +113,12 @@ def main(argv):
             oo['port'] = map(int,eval(a))
             opt_count += 1
         elif o in ('-k','--knock'):
-            oo['knock'] = keys[int(a)]
+            i = int(a)
+            if i >= 0:
+                oo['knock'] = keys[int(a)]
+            else:
+                print('  selecting invalid knock')
+                oo['knock'] = INVALID_KNOCK
             opt_count += 1
         elif o in ('--ans'):
             answered = int(a)
@@ -138,12 +146,19 @@ def main(argv):
         elif type == 'first': 
             ans,unans = send_auth(oo['knock'], 1)
         elif type == 'last':  
-            ans,unans = send_auth(oo['knock'], len(oo['knock']))
-        elif type == 'retry':   
+            ans,unans = send_auth(oo['knock'], len(oo['knock'])-1)
+        elif type == 'noid':
+            seq = oo['knock'][1:]
+            print('  knock (missing ID): %s' % ','.join(map(str,seq)))
+            ans,unans = send_auth(seq, len(seq))
+        elif type == 'no_init':   
             ans,unans = send_auth(oo['knock'], len(oo['knock']), init=False)
         elif type == 'rev':   
-            seq = reversed(oo['knock'])
-            ans,unans = send_auth(oo['dst'], seq)
+            seq = []
+            seq.append(oo['knock'][0])
+            seq.extend(reversed(oo['knock'][1:]))
+            print('  knock (out of order): %s' % ','.join(map(str,seq)))
+            ans,unans = send_auth(seq)
     else:
         sys.exit(0)
         

@@ -1,8 +1,9 @@
 import logging
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)  # suppress IPv6 error
-from subprocess import call
+from subprocess import call, Popen, PIPE
 from scapy.all import *
 from time import sleep
+import urllib2, json
 
 mininet_call = '/home/mininet/mininet/util/m'
 directory = '~/networkAuth/'
@@ -89,6 +90,86 @@ def test4():
     print('h3 still access server')
     call_host('h3', '--ping', 'icmp','--ans','10','--unans','0')
     
+def test5():
+    print('=== test #5 -- h4 auth, packet loss ===')
+    print('h4 no access to server')
+    call_host('h4', '--ping', 'icmp','--ans','0','--unans','10')
+    
+    print('h4 attempted auth #1 (init lost)')
+    call_host('h4', '--auth', 'no_init', '-k', '2','--ans','0','--unans','4')
+    print('h4 no access')
+    call_host('h4', '--ping', 'icmp','--ans','0','--unans','10')
+    
+    # try:
+        # response = urllib2.urlopen(rest_server+inform_pattern).read()
+        # print(json.loads(response)['hosts']['authenticating_hosts'])
+    # except urllib2.HTTPError:
+        # print('error')
+    
+    print('h4 attempted auth #2 (no key id)')
+    call_host('h4', '--auth', 'noid', '-k', '2','--ans','0','--unans','3')
+    print('h4 no access')
+    call_host('h4', '--ping', 'icmp','--ans','0','--unans','10')
+    
+    try:
+        response = urllib2.urlopen(rest_server+inform_pattern).read()
+        print('h4 is partially authd: %s' % json.loads(response)['hosts']['authenticating_hosts'])
+    except urllib2.HTTPError:
+        print('error')
+    
+    print('h4 attempted auth #3 (all but last)')
+    call_host('h4', '--auth', 'last', '-k', '2','--ans','0','--unans','3')
+    print('h4 no access')
+    call_host('h4', '--ping', 'icmp','--ans','0','--unans','10')
+
+    print('h4 attempted auth #4')
+    call_host('h4', '--auth', 'full', '-k', '2','--ans','0','--unans','4')
+    print('h4 no access')
+    call_host('h4', '--ping', 'icmp','--ans','10','--unans','0')
+    
+def test6():
+    print('=== test #6 -- h5 auth, packets out of order ===')
+    print('h5 no access to server')
+    call_host('h5', '--ping', 'icmp','--ans','0','--unans','10')
+    print('h5 auth')
+    call_host('h5', '--auth', 'rev', '-k', '3','--ans','0','--unans','4')
+    print('h5 access')
+    call_host('h5', '--ping', 'icmp','--ans','10','--unans','0')
+    
+def test7():
+    print('=== test #7 -- h6 auth, key incorrect (no auth) ===')
+    print('h6 no access:')
+    call_host('h6', '--ping', 'icmp','--ans','0','--unans','10')
+    call_host('h6', '--ping', 'tcp', '-p', '[80,22]','--ans','0','--unans','20')
+    print('h6 auth:')
+    call_host('h6', '--auth', 'full', '-k', '-1','--ans','0','--unans','4')
+    print('h6 still no access:')
+    call_host('h6', '--ping', 'icmp','--ans','0','--unans','10')
+    call_host('h6', '--ping', 'tcp', '-p', '[80,22]','--ans','0','--unans','20')
+    
+def test8():
+    print('=== test #8 -- only authorised can access ===')
+    print('h1 icmp, tcp, arp')
+    call_host('h1', '--ping', 'icmp','--ans','0','--unans','10')
+    call_host('h1', '--ping', 'tcp', '-p', '[80,22,100]','--ans','0','--unans','30')
+    call_host('h1', '--ping', 'arp','--ans','10','--unans','0')
+    print('h3 icmp, tcp, arp')
+    call_host('h3', '--ping', 'icmp','--ans','10','--unans','0')
+    call_host('h3', '--ping', 'tcp', '-p', '[80,22,100]','--ans','30','--unans','0')
+    call_host('h3', '--ping', 'arp','--ans','10','--unans','0')
+    print('h4 icmp, tcp, arp')
+    call_host('h4', '--ping', 'icmp','--ans','10','--unans','0')
+    call_host('h4', '--ping', 'tcp', '-p', '[80,22,100]','--ans','30','--unans','0')
+    call_host('h4', '--ping', 'arp','--ans','10','--unans','0')
+    print('h5 icmp, tcp, arp')
+    call_host('h5', '--ping', 'icmp','--ans','10','--unans','0')
+    call_host('h5', '--ping', 'tcp', '-p', '[80,22,100]','--ans','30','--unans','0')
+    call_host('h5', '--ping', 'arp','--ans','10','--unans','0')
+    print('h6 icmp, tcp, arp')
+    call_host('h6', '--ping', 'icmp','--ans','0','--unans','10')
+    call_host('h6', '--ping', 'tcp', '-p', '[80,22,100]','--ans','0','--unans','30')
+    call_host('h6', '--ping', 'arp','--ans','10','--unans','0')
+    
 def main(argv):
     print('=== ## beginning tests ## ===')
     test0()
@@ -96,6 +177,10 @@ def main(argv):
     test2()
     test3()
     test4()
+    test5()
+    test6()
+    test7()
+    test8()
 
 
 

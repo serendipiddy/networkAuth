@@ -1,0 +1,235 @@
+=== ## beginning tests ## ===
+=== test #0 -- no access to server, except ARP ===
+h1 icmp, tcp, arp
+  ping icmp 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:   10  --  True
+  ping tcp 10.0.0.2 80,22,100
+  * answered:      0  --  True
+  * unanswered:   30  --  True
+  ping arp 10.0.0.2
+  * answered:     10  --  True
+  * unanswered:    0  --  True
+h3 icmp, tcp, arp
+  ping icmp 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:   10  --  True
+  ping tcp 10.0.0.2 80,22,100
+  * answered:      0  --  True
+  * unanswered:   30  --  True
+  ping arp 10.0.0.2
+  * answered:     10  --  True
+  * unanswered:    0  --  True
+h4 icmp, tcp, arp
+  ping icmp 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:   10  --  True
+  ping tcp 10.0.0.2 80,22,100
+  * answered:      0  --  True
+  * unanswered:   30  --  True
+  ping arp 10.0.0.2
+  * answered:     10  --  True
+  * unanswered:    0  --  True
+h5 icmp, tcp, arp
+  ping icmp 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:   10  --  True
+  ping tcp 10.0.0.2 80,22,100
+  * answered:      0  --  True
+  * unanswered:   30  --  True
+  ping arp 10.0.0.2
+  * answered:     10  --  True
+  * unanswered:    0  --  True
+=== test #1 -- hosts can communicate ===
+h1 <-> h3
+  ping icmp 10.0.0.3
+  * answered:     10  --  True
+  * unanswered:    0  --  True
+  ping tcp 10.0.0.3 80,22,100
+  * answered:     30  --  True
+  * unanswered:    0  --  True
+h1 <-> h3
+  ping icmp 10.0.0.3
+  * answered:     10  --  True
+  * unanswered:    0  --  True
+  ping tcp 10.0.0.3 80,22,100
+  * answered:     30  --  True
+  * unanswered:    0  --  True
+h4 <-> h5
+  ping icmp 10.0.0.5
+  * answered:     10  --  True
+  * unanswered:    0  --  True
+  ping tcp 10.0.0.5 80,22,100
+  * answered:     30  --  True
+  * unanswered:    0  --  True
+=== test #2 -- h1 knocking ===
+  knock: 7118,21392,36100,59834
+  auth full 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:    4  --  True
+  ping icmp 10.0.0.2
+  * answered:     10  --  True
+  * unanswered:    0  --  True
+=== test #3 -- h3 no-auth-yes ===
+h3 no access:
+  ping icmp 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:   10  --  True
+  ping tcp 10.0.0.2 80,22
+  * answered:      0  --  True
+  * unanswered:   20  --  True
+h3 auth:
+  knock: 5183,31807,39385,52882
+  auth full 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:    4  --  True
+h3 full access:
+  ping icmp 10.0.0.2
+  * answered:     10  --  True
+  * unanswered:    0  --  True
+  ping tcp 10.0.0.2 80,22
+  * answered:     20  --  True
+  * unanswered:    0  --  True
+=== test #4 -- h1 delete ===
+  ping icmp 10.0.0.2
+  * answered:     10  --  True
+  * unanswered:    0  --  True
+deleting 10.0.0.1 (h1) from authorised
+h1 no access to server
+  ping icmp 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:   10  --  True
+h3 still access server
+  ping icmp 10.0.0.2
+  * answered:     10  --  True
+  * unanswered:    0  --  True
+=== test #5 -- h4 auth, packet loss ===
+h4 no access to server
+  ping icmp 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:   10  --  True
+h4 attempted auth #1 (init lost)
+  knock: 6413,21531,41089,61592
+  auth no_init 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:    4  --  True
+h4 no access
+  ping icmp 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:   10  --  True
+h4 attempted auth #2 (no key id)
+  knock: 6413,21531,41089,61592
+  knock (missing ID): 21531,41089,61592
+  auth noid 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:    3  --  True
+h4 no access
+  ping icmp 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:   10  --  True
+h4 is partially authd: {u'10.0.0.4': {}}
+h4 attempted auth #3 (all but last)
+  knock: 6413,21531,41089,61592
+  auth last 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:    3  --  True
+h4 no access
+  ping icmp 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:   10  --  True
+h4 attempted auth #4
+  knock: 6413,21531,41089,61592
+  auth full 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:    4  --  True
+h4 no access
+  ping icmp 10.0.0.2
+  * answered:     10  --  True
+  * unanswered:    0  --  True
+=== test #6 -- h5 auth, packets out of order ===
+h5 no access to server
+  ping icmp 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:   10  --  True
+h5 auth
+  knock: 6564,19520,47213,65228
+  knock (out of order): 6564,65228,47213,19520
+  auth rev 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:    4  --  True
+h5 access
+  ping icmp 10.0.0.2
+  * answered:     10  --  True
+  * unanswered:    0  --  True
+=== test #7 -- h6 auth, key incorrect (no auth) ===
+h6 no access:
+  ping icmp 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:   10  --  True
+  ping tcp 10.0.0.2 80,22
+  * answered:      0  --  True
+  * unanswered:   20  --  True
+h6 auth:
+  selecting invalid knock
+  knock: 7119,21393,36101,59835
+  auth full 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:    4  --  True
+h6 still no access:
+  ping icmp 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:   10  --  True
+  ping tcp 10.0.0.2 80,22
+  * answered:      0  --  True
+  * unanswered:   20  --  True
+=== test #8 -- only authorised can access ===
+h1 icmp, tcp, arp
+  ping icmp 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:   10  --  True
+  ping tcp 10.0.0.2 80,22,100
+  * answered:      0  --  True
+  * unanswered:   30  --  True
+  ping arp 10.0.0.2
+  * answered:     10  --  True
+  * unanswered:    0  --  True
+h3 icmp, tcp, arp
+  ping icmp 10.0.0.2
+  * answered:     10  --  True
+  * unanswered:    0  --  True
+  ping tcp 10.0.0.2 80,22,100
+  * answered:     30  --  True
+  * unanswered:    0  --  True
+  ping arp 10.0.0.2
+  * answered:     10  --  True
+  * unanswered:    0  --  True
+h4 icmp, tcp, arp
+  ping icmp 10.0.0.2
+  * answered:     10  --  True
+  * unanswered:    0  --  True
+  ping tcp 10.0.0.2 80,22,100
+  * answered:     30  --  True
+  * unanswered:    0  --  True
+  ping arp 10.0.0.2
+  * answered:     10  --  True
+  * unanswered:    0  --  True
+h5 icmp, tcp, arp
+  ping icmp 10.0.0.2
+  * answered:     10  --  True
+  * unanswered:    0  --  True
+  ping tcp 10.0.0.2 80,22,100
+  * answered:     30  --  True
+  * unanswered:    0  --  True
+  ping arp 10.0.0.2
+  * answered:     10  --  True
+  * unanswered:    0  --  True
+h6 icmp, tcp, arp
+  ping icmp 10.0.0.2
+  * answered:      0  --  True
+  * unanswered:   10  --  True
+  ping tcp 10.0.0.2 80,22,100
+  * answered:      0  --  True
+  * unanswered:   30  --  True
+  ping arp 10.0.0.2
+  * answered:     10  --  True
+  * unanswered:    0  --  True
