@@ -2,6 +2,7 @@
 <head>
 <title>Port Knocking</title>
 <script>
+selectedHost = '0.0.0.0';
 function getInfo() {
     var xhttp = new XMLHttpRequest();
     xhttp.onreadystatechange=function() {
@@ -28,7 +29,7 @@ function getInfo() {
         html = html + '<h2>Hosts</h2>\n';
             html = html + '<h3>Authenticated</h3>\n'
             for (var host in res.hosts.authenticated_hosts) {
-              html = html + '<p>'+host+': '+res.hosts.authenticated_hosts[host]+'s</p>\n';
+              html = html + '<p onclick="clicked(\''+host+'\')">'+host+': '+res.hosts.authenticated_hosts[host]+'s</p>\n';
             }
             html = html + '<h3>Authenticating</h3>\n';
             for (var host in res.hosts.authenticating_hosts) {
@@ -45,6 +46,11 @@ function getInfo() {
   xhttp.send();
 }
 
+function clicked(ip) {
+  console.log('selecting '+ip)
+  selectedHost = ip;
+}
+
 function getKey() {
     var xhttp = new XMLHttpRequest();
     xhttp.onreadystatechange=function() {
@@ -58,11 +64,31 @@ function getKey() {
     xhttp.open('POST', 'portknock/create_key', true);
     xhttp.send();
 }
+
+function delHost() {
+    if (selectedHost === '0.0.0.0') 
+      return;
+
+    var xhttp = new XMLHttpRequest();
+    xhttp.onreadystatechange=function() {
+      if (xhttp.readyState == 4 && xhttp.status == 204) {
+          console.log('delete success');
+      }
+      else {
+          console.log('delete nup');
+      }
+    }
+    xhttp.open('DELETE', 'portknock/host/'+selectedHost, true);
+    xhttp.send();
+    
+    selectedHost = '0.0.0.0';
+}
 </script>
 <style>
 p {
   margin: 0;
   padding: 0;
+  display: block;
 }
 h3, h2 {
   margin-bottom: 0;
@@ -74,6 +100,7 @@ h3, h2 {
 <h1>Port Knocking Control Panel</h1>
 <button onclick='getInfo()'> Get Port Knocking Info </button>
 <button onclick='getKey()'> Create Key </button>
+<button onclick='delHost()'> Delete Host </button>
 
 <div id='new_key' style='height:20px'>
   

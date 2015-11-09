@@ -229,7 +229,7 @@ class Port_Knocking(app_manager.RyuApp):
             return
             
         if idx not in self.authing_hosts[src_ip]:
-            print('(AUTH-buffered) %s length: %d/%d (%d)' % (src_ip, len(self.authing_hosts[src_ip]),self.key_length, key_val))
+            print('(AUTH-buffered) %s length: %d/%d (%d)' % (src_ip, len(self.authing_hosts[src_ip])+1,self.key_length, key_val))
             self.authing_hosts[src_ip][idx] = key_val
         else:
             print('duplicate %d->%d' % (idx,key_val))
@@ -271,13 +271,25 @@ class Port_Knocking(app_manager.RyuApp):
         
         add_flow(datapath, 3, match_ipv4, action_fwd_to_controller)
         
-    def remove_authing_flows(self,src_ip):
-        ''' removes the flows that capture knock sequence '''
+    def remove_auth_flows(self,src_ip):
+        """ removes the flows that capture knock sequence 
+                (identified with src_ip and priority) """
         match_ipv4 = ofproto_v1_3_parser.OFPMatch()
         match_ipv4.append_field(ofproto_v1_3.OXM_OF_IPV4_SRC, int(IPAddress(src_ip)))
         
         for id, dp in self.datapaths:
             delete_flow(dp, 3, match_ipv4)
+            
+    def remove_host_access(self,src_ip):
+        """ Revokes access to server for an authorised host """
+        
+        if src_ip not in self.authenticated_hosts:
+            return False
+            
+        del self.authenticated_hosts[src_ip]
+        self.remove_auth_flows(src_ip)
+        
+        return True
     
     def set_datapath_svr_port(self, dpid, in_port):
         if dpid in self.server_port and self.server_port[dpid] == in_port:

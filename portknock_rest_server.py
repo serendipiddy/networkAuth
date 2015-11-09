@@ -65,6 +65,12 @@ class Portknock_Server(ControllerBase):
         fd.close()
         return page_file
         
+    def remove_authed_host(self, host):
+        """ Removes IP address from authenticated hosts """
+        if self.port_knocking.remove_host_access(host):
+            return '204 OK'
+        return '404 Not Found'
+        
     @route("portknock", restpath, methods=["GET"])
     def get_index(self, req, **kwargs):
         body = self.get_page('html/index.html')
@@ -74,13 +80,23 @@ class Portknock_Server(ControllerBase):
     def get_portknock_info(self, req, **kwargs):
         body = json.dumps(self.get_portknocking_info())
         return Response(content_type="application/json", body=body)
-        
+    
     @route("portknock", restpath+'/create_key', methods=["POST"])
-    def get_portknock_key(self, req, **kwargs):
+    def create_portknock_key(self, req, **kwargs):
         keys = self.create_key()
         
         body = json.dumps(keys['ports'])
         return Response(content_type="application/json", body=body)
+    
+    @route("portknock", restpath+'/host/{host:.*?}', methods=["DELETE"])
+    def delete_host(self, req, **kwargs):
+        if 'host' not in kwargs:
+          return Response(body='Error, missing host IP')
+        
+        res = Response()
+        res.status = self.remove_authed_host(kwargs['host'])
+        
+        return res
 
 
 def generate_key(num_digits, seq_size):
