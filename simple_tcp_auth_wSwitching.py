@@ -79,6 +79,7 @@ class Port_Knocking(app_manager.RyuApp):
           installs a default flow to out:CONTROLLER"""
         datapath = ev.msg.datapath
         
+        self.datapaths[datapath.id] = datapath
         self.switching.switch_features_handler(ev)
         
         self.install_server_blocking_flows(datapath)
@@ -275,10 +276,12 @@ class Port_Knocking(app_manager.RyuApp):
         """ removes the flows that capture knock sequence 
                 (identified with src_ip and priority) """
         match_ipv4 = ofproto_v1_3_parser.OFPMatch()
+        match_ipv4.append_field(ofproto_v1_3.OXM_OF_ETH_TYPE, ether_types.ETH_TYPE_IP)
         match_ipv4.append_field(ofproto_v1_3.OXM_OF_IPV4_SRC, int(IPAddress(src_ip)))
+        match_ipv4.append_field(ofproto_v1_3.OXM_OF_IPV4_DST, int(IPAddress(self.server_ipv4_address)))
         
-        for id, dp in self.datapaths:
-            delete_flow(dp, 3, match_ipv4)
+        for id in self.datapaths:
+            delete_flow(self.datapaths[id], 3, match_ipv4)
             
     def remove_host_access(self,src_ip):
         """ Revokes access to server for an authorised host """
@@ -286,6 +289,7 @@ class Port_Knocking(app_manager.RyuApp):
         if src_ip not in self.authenticated_hosts:
             return False
             
+        print('removing %s from auth hosts' % src_ip)
         del self.authenticated_hosts[src_ip]
         self.remove_auth_flows(src_ip)
         
@@ -383,9 +387,10 @@ def add_flow(datapath, priority, match, actions, buffer_id=None):
     
 def delete_flow(datapath, priority, match):
     ''' This method is stolen from Jarrod :P '''
+    print('delete flow %s' % match)
     ofproto = datapath.ofproto
     parser = datapath.ofproto_parser
-    command = ofproto.OFPFC_DELETE_STRICT
+    command = ofproto.OFPFC_DELETE
     mod = parser.OFPFlowMod(datapath=datapath, command=command,
                             priority=priority, match=match,
                             out_port=ofproto.OFPP_ANY,
