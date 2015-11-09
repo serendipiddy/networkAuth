@@ -16,25 +16,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ryu.base import app_manager
-from ryu.controller import ofp_event
-from ryu.controller.handler import (
-    CONFIG_DISPATCHER, 
-    MAIN_DISPATCHER,
-    set_ev_cls
-)
 from ryu.ofproto import ofproto_v1_3
 from ryu.lib.packet import (
     packet,
     ethernet
 )
 
+
 class SimpleHubSwitch:
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
     
-    def __init__(self, *args, **kwargs):
-        print("(HUBSWICH) initiate switching")
-        self.mac_to_port = {} # d[id -> {mac->port}
+    def __init__(self):
+        print("(SWCH-init) initiate switching")
+        self.mac_to_port = {}  # d[id -> {mac->port}
     
     def switch_features_handler(self, ev):
         """Runs when switches handshake with controller
@@ -43,15 +37,15 @@ class SimpleHubSwitch:
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         
-        print("(HUBSWICH) installing table-miss flow to dp %d" % datapath.id)
+        print("(SWCH-install) installing table-miss flow to dp %d" % datapath.id)
         
         # install a table-miss flow entry
-        match = parser.OFPMatch();
+        match = parser.OFPMatch()
         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
         self.add_flow(datapath, 0, match, actions)
         
     def add_flow(self, datapath, priority, match, actions, buffer_id=None):
-        '''Adds this flow to the given datapath'''
+        """Adds this flow to the given datapath"""
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,actions)]
@@ -62,7 +56,7 @@ class SimpleHubSwitch:
         else:
             mod = parser.OFPFlowMod(datapath=datapath, priority=priority, 
                                     match=match, instructions=inst)
-        print("(HUBSWICH-add flow): dp:%d %s %s" % (datapath.id, match, actions))
+        print("(SWCH-add flow): dp:%d %s %s" % (datapath.id, match, actions))
         datapath.send_msg(mod)
         
     def packet_in_handler(self, ev):
@@ -73,7 +67,7 @@ class SimpleHubSwitch:
         parser = dp.ofproto_parser
         
         in_port = msg.match['in_port']
-        # print("(HUBSWICH-packet_in): port %d" % in_port)
+        # print("(SWCH-packet_in): port %d" % in_port)
         
         pkt = packet.Packet(msg.data)
         
@@ -82,25 +76,25 @@ class SimpleHubSwitch:
         src = eth.src
         
         dpid = dp.id
-        self.mac_to_port.setdefault(dpid, {}) # if not exists, create
+        self.mac_to_port.setdefault(dpid, {})  # if not exists, create
         
-        self.mac_to_port[dpid][src] = in_port # learn the src mac's port
+        self.mac_to_port[dpid][src] = in_port  # learn the src mac's port
         if dst in self.mac_to_port[dpid]:
-          out_port = self.mac_to_port[dpid][dst]
+            out_port = self.mac_to_port[dpid][dst]
         else:
-          out_port = ofp.OFPP_FLOOD
+            out_port = ofp.OFPP_FLOOD
           
         actions = [parser.OFPActionOutput(out_port)]
         
         # Install the flow rule
         if out_port != ofp.OFPP_FLOOD:
-          match = parser.OFPMatch(in_port=in_port, eth_dst=dst)
-          
-          if msg.buffer_id != ofp.OFP_NO_BUFFER:
-            self.add_flow(dp, 1, match, actions, msg.buffer_id)
-            return
-          else:
-            self.add_flow(dp, 1, match, actions)
+            match = parser.OFPMatch(in_port=in_port, eth_dst=dst)
+            
+            if msg.buffer_id != ofp.OFP_NO_BUFFER:
+                self.add_flow(dp, 1, match, actions, msg.buffer_id)
+                return
+            else:
+                self.add_flow(dp, 1, match, actions)
         
         data = None
         if msg.buffer_id == ofp.OFP_NO_BUFFER:

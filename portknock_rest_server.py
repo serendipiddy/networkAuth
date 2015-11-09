@@ -9,11 +9,13 @@ import json, random, binascii
       * Editing active keys
 '''
 
-# GET  /portknock/authenticated_hosts
-# POST /portknock/add_key
+# GET    /portknock/authenticated_hosts
+# POST   /portknock/add_key
 # DELETE /portknock/host/<host_ip>
 
 restpath = '/portknock'
+
+
 class Portknock_Server(ControllerBase):
     def __init__(self, req, link, data, **config):
         super(Portknock_Server, self).__init__(req, link, data, **config)
@@ -22,7 +24,7 @@ class Portknock_Server(ControllerBase):
         self.seq_size = self.port_knocking.seq_size
     
     def get_portknocking_info(self):
-        ''' information on the current state of the port knocking server '''
+        """ information on the current state of the port knocking server """
         rv = {}
         
         server = {}
@@ -46,10 +48,10 @@ class Portknock_Server(ControllerBase):
         return rv
     
     def create_key(self):
-        data = self.generate_key(self.key_length, self.seq_size)
+        data = generate_key(self.key_length, self.seq_size)
         
         while not self.port_knocking.add_auth_key(data['keys']):
-            data = self.generate_key(self.key_length, self.seq_size)
+            data = generate_key(self.key_length, self.seq_size)
         
         return data
       
@@ -57,11 +59,11 @@ class Portknock_Server(ControllerBase):
         try:
             fd = open(page,'r')
         except IOError:
-          return '<head><title>Error</title></head><body><p>cannot open %s</p></body></html>' % page
+            return '<head><title>Error</title></head><body><p>cannot open %s</p></body></html>' % page
           
-        file = fd.read()
+        page_file = fd.read()
         fd.close()
-        return file
+        return page_file
         
     @route("portknock", restpath, methods=["GET"])
     def get_index(self, req, **kwargs):
@@ -80,37 +82,38 @@ class Portknock_Server(ControllerBase):
         body = json.dumps(keys['ports'])
         return Response(content_type="application/json", body=body)
 
-    def generate_key(self, num_digits, seq_size):
-        ''' generates a key for authorising 
-              seq_size <= 8
-              num_digits  < 2**seq_size '''
-        key_len = 16 - seq_size
-        if num_digits > 2**seq_size: 
-            print('(KEYGEN-error) length (%d) too long for max seq (%d)' % (num_digits, 2**seq_size)) 
-            return
+
+def generate_key(num_digits, seq_size):
+    """ generates a key for authorising 
+          seq_size <= 8
+          num_digits  < 2**seq_size """
+    key_len = 16 - seq_size
+    if num_digits > 2**seq_size: 
+        print('(KEYGEN-error) length (%d) too long for max seq (%d)' % (num_digits, 2**seq_size)) 
+        return
+    
+    key_seq = list()
+    port_seq = list()
+    
+    for i in range(num_digits):
+        port = []
+        if key_len > 8:
+            a = bytearray(random.getrandbits(key_len-8) for x in range(1))
+            port.append(binascii.b2a_hex(a))
+        else:
+            a = 0
+        b = bytearray(random.getrandbits(8) for x in range(1))
+        port.append(binascii.b2a_hex(b))
+          
+        key = int(''.join(port), 16)
         
-        key_seq = list()
-        port_seq = list()
-        
-        for i in range(num_digits):
-            port = []
-            if (key_len > 8):
-              a = bytearray(random.getrandbits(key_len-8) for x in range(1))
-              port.append(binascii.b2a_hex(a))
-            else:
-              a = 0
-            b = bytearray(random.getrandbits(8) for x in range(1))
-            port.append(binascii.b2a_hex(b))
-              
-            key = int(''.join(port),16)
-            
-            pnum = (i << key_len) + key
-            # print('seq: %3d, key: %5d, port: %d' % (i, key,pnum))
-            # print('seq  {0:0>16b}'.format(i << key_len))
-            # print('key  {0:0>16b}'.format(key))
-            # print('port {0:0>16b}'.format(pnum))
-            key_seq.append({'seq':i,'value':key,'port':pnum})
-            port_seq.append(pnum)
-        
-        return {'ports':port_seq,'keys':key_seq}
-        
+        pnum = (i << key_len) + key
+        # print('seq: %3d, key: %5d, port: %d' % (i, key,pnum))
+        # print('seq  {0:0>16b}'.format(i << key_len))
+        # print('key  {0:0>16b}'.format(key))
+        # print('port {0:0>16b}'.format(pnum))
+        key_seq.append({'seq': i, 'value': key, 'port': pnum})
+        port_seq.append(pnum)
+    
+    return {'ports': port_seq, 'keys': key_seq}
+    

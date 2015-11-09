@@ -1,0 +1,86 @@
+<html>
+<head>
+<title>Port Knocking</title>
+<script>
+function getInfo() {
+    var xhttp = new XMLHttpRequest();
+    xhttp.onreadystatechange=function() {
+      if (xhttp.readyState == 4 && xhttp.status == 200) {
+        var res = JSON.parse(xhttp.responseText)
+        var html = ''
+        html = html + '<h2>Server Details</h2>\n';
+            html = html + '<p> IPv4: '+JSON.stringify(res.server.ipv4)+'</p>\n';
+            html = html + '<p> IPv6: '+JSON.stringify(res.server.ipv6)+'</p>\n';
+        html = html + '<h2>Keys</h2>\n';
+            html += '<p> Length of key: '+res.keys.key_length+' </p>';
+            html += '<p> Sequence size: '+res.keys.seq_size+' </p>';
+            html += '<p> Auth init port: '+res.keys.auth_port+' </p>\n';
+            html += '<h3>Active Keys</h3>\n';
+            for (var key in res.keys.active_keys) {
+              var ports = res.keys.active_keys[key].port
+              html = html + '<p> ('+key+'): ';
+              for (var i = 0; i < ports.length-1; i++) {
+                html += ports[i]+', ';
+              }
+              html += ports[ports.length-1];
+              html +='</p>\n';
+            }
+        html = html + '<h2>Hosts</h2>\n';
+            html = html + '<h3>Authenticated</h3>\n'
+            for (var host in res.hosts.authenticated_hosts) {
+              html = html + '<p>'+host+': '+res.hosts.authenticated_hosts[host]+'s</p>\n';
+            }
+            html = html + '<h3>Authenticating</h3>\n';
+            for (var host in res.hosts.authenticating_hosts) {
+              html = html + '<p>'+host+': '+res.hosts.authenticating_hosts[host]+'s</p>\n';
+            }
+            html = html + '<h3>Blocked</h3>\n';
+            for (var host in res.hosts.blocked_hosts) {
+              html = html + '<p>'+host+': '+res.hosts.blocked_hosts[host]+'s</p>\n';
+            }
+        document.getElementById("info").innerHTML = html;
+      }
+  }
+  xhttp.open('GET', 'portknock/info', true);
+  xhttp.send();
+}
+
+function getKey() {
+    var xhttp = new XMLHttpRequest();
+    xhttp.onreadystatechange=function() {
+      if (xhttp.readyState == 4 && xhttp.status == 200) {
+        var res = JSON.parse(xhttp.responseText)
+        var html = JSON.stringify(res);
+        
+        document.getElementById("new_key").innerHTML = html;
+      }
+    }
+    xhttp.open('POST', 'portknock/create_key', true);
+    xhttp.send();
+}
+</script>
+<style>
+p {
+  margin: 0;
+  padding: 0;
+}
+h3, h2 {
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+</style>
+</head>
+<body>
+<h1>Port Knocking Control Panel</h1>
+<button onclick='getInfo()'> Get Port Knocking Info </button>
+<button onclick='getKey()'> Create Key </button>
+
+<div id='new_key' style='height:20px'>
+  
+</div>
+
+<div id='info'>
+</div>
+
+</body>
+</html>

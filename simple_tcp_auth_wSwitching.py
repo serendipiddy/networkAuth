@@ -7,7 +7,6 @@ from ryu.controller.handler import (
 )
 from ryu.ofproto import ofproto_v1_3
 from ryu.ofproto import ofproto_v1_3_parser
-from ryu.lib import type_desc
 from ryu.lib.packet import (
     in_proto, # ipv4 layer 3 protocols
     packet,
@@ -32,6 +31,7 @@ def get_seq_len(key_length):
     if n > 15: return 0
     else: return n
 
+    
 class Port_Knocking(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
     _CONTEXTS = {"wsgi":WSGIApplication}
@@ -71,6 +71,7 @@ class Port_Knocking(app_manager.RyuApp):
             {"value": 15961,"seq": 1,"port": 32345},
             {"value": 8637, "seq": 2,"port": 41405},
             {"value": 2929, "seq": 3,"port": 52081}])
+        self.load_keys_from_file('test_keys.txt')
         
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -93,6 +94,20 @@ class Port_Knocking(app_manager.RyuApp):
         # flush existing flows to for server
         return
         
+    def load_keys_from_file(self, filename):
+        """ Loads a list of keys from file
+              Keys are separated by line, values by commas """
+        print('(AUTH-key file) loading from file')
+              
+        def convert_to_key(port_num):
+            port_num = int(port_num)
+            i,k = port_to_parts(port_num, self.seq_size)
+            return {'value': k, 'seq':i, 'port':port_num}
+        
+        with open(filename, 'r') as infile:
+            for line in infile:
+                self.add_auth_key(map(convert_to_key, line.split(',')))
+              
     def add_auth_key(self, key_list):
         ''' Keys are a given as a list of (seq, key) values, 
               each pair of letters corresponds to a port number 
@@ -115,41 +130,44 @@ class Port_Knocking(app_manager.RyuApp):
                 print('(AUTH-addkey) invalid value %d at key[%d] -- too large! (>%d)' % (val,n,2**(num_port_bits - self.seq_size)))
                 return True
             idx+=1
-            
+        
         # check key_id doesn't exist already
         if key_list[0]['value'] in self.active_keys:
             return False
-        
+                
         auth_key = []
         auth_ports = []
-        for k in key_list:
-            print('%d: %d -> %d' % (k['port'], k['seq'], k['value']))
-            auth_key.append(k['value'])
-            auth_ports.append(k['port'])
+        for key in key_list:
+            # print('%d: %d -> %d' % (key['port'], key['seq'], key['value']))
+            auth_key.append(key['value'])
+            auth_ports.append(key['port'])
         
         self.active_keys[auth_key[0]] = {'key': auth_key,'port': auth_ports}
         print('(AUTH-addkey) Added key %s' % auth_key)
+        
         return True
     
     def install_server_blocking_flows(self, datapath):
         ''' Blocking IP access to the server and allowing ARP '''
+        print('(AUTH-install) installing %d\'s server block flows' % datapath.id)
+        
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         
-        action_block = [] # empty == block
+        action_block = [] # empty == drop
         
         # install block all to server rule (mac, ipv4, ipv6)
-        match_mac = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, eth_dst=self.server_mac_address);
-        match_ipv4 = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_dst=self.server_ipv4_address);
-        match_ipv6 = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IPV6, ipv6_dst=self.server_ipv6_address);
+        match_mac = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, eth_dst=self.server_mac_address)
+        match_ipv4 = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_dst=self.server_ipv4_address)
+        match_ipv6 = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IPV6, ipv6_dst=self.server_ipv6_address)
         
-        self.add_flow(datapath, 1, match_mac, action_block)
-        self.add_flow(datapath, 1, match_ipv4, action_block)
-        self.add_flow(datapath, 1, match_ipv6, action_block)
+        add_flow(datapath, 1, match_mac, action_block)
+        add_flow(datapath, 1, match_ipv4, action_block)
+        add_flow(datapath, 1, match_ipv6, action_block)
         
     def install_auth_init_flow(self, datapath):
         '''  Install rule for matching for the TCP auth init packet '''
-        
+        print('(AUTH-install) installing %d\'s knock init flows' % datapath.id)
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         
@@ -157,21 +175,15 @@ class Port_Knocking(app_manager.RyuApp):
         
         # send TCP on port self.auth_port to controller
         match_tcp_auth_ipv4 = parser.OFPMatch(
-            eth_type=ether_types.ETH_TYPE_IP, 
-            ip_proto=in_proto.IPPROTO_TCP,
-            # eth_dst= self.server_mac_address,
-            ipv4_dst= IPAddress(self.server_ipv4_address),
-            tcp_dst= self.auth_port)
-        match_tcp_auth_ipv6 = parser.OFPMatch(
-            eth_type=ether_types.ETH_TYPE_IP, 
-            ip_proto=in_proto.IPPROTO_TCP,
-            # eth_dst= self.server_mac_address,
-            ipv6_dst= IPAddress(self.server_ipv6_address),
-            tcp_dst= self.auth_port)
+            eth_type=ether_types.ETH_TYPE_IP, ip_proto=in_proto.IPPROTO_TCP,
+            ipv4_dst= IPAddress(self.server_ipv4_address), tcp_dst= self.auth_port)
+        match_tcp_auth_ipv6 = parser.OFPMatch( 
+            eth_type=ether_types.ETH_TYPE_IP, ip_proto=in_proto.IPPROTO_TCP, 
+            ipv6_dst= IPAddress(self.server_ipv6_address), tcp_dst= self.auth_port)
         
         # add a flow for auth init packet capture
-        self.add_flow(datapath, 2, match_tcp_auth_ipv4, action_packet_in)
-        self.add_flow(datapath, 2, match_tcp_auth_ipv6, action_packet_in)
+        add_flow(datapath, 2, match_tcp_auth_ipv4, action_packet_in)
+        add_flow(datapath, 2, match_tcp_auth_ipv6, action_packet_in)
           
     def auth_host(self, src_ip, datapath):
         ''' Allows given host to access the server '''
@@ -183,23 +195,15 @@ class Port_Knocking(app_manager.RyuApp):
         match_ipv4.append_field(ofproto_v1_3.OXM_OF_ETH_TYPE, ether_types.ETH_TYPE_IP)
         match_ipv4.append_field(ofproto_v1_3.OXM_OF_IPV4_SRC, int(IPAddress(src_ip)))
         match_ipv4.append_field(ofproto_v1_3.OXM_OF_IPV4_DST, int(self.server_ipv4_address))
-        self.add_flow(datapath, 3, match_ipv4, action_allow_to_server)
+        add_flow(datapath, 3, match_ipv4, action_allow_to_server)
         
-        ## IPv6
-        # match_ipv6 = ofproto_v1_3_parser.OFPMatch()
-        # match_ipv6.append_field(ofproto_v1_3.OXM_OF_ETH_TYPE, ether_types.ETH_TYPE_IPV6)
-        # match_ipv6.append_field(ofproto_v1_3.OXM_OF_IPV6_SRC, ryu_mac)
-        # match_ipv6.append_field(ofproto_v1_3.OXM_OF_IPV6_DST, self.server_ipv6_address.words)
-        # self.add_flow(datapath, 3, match_ipv6, action_allow_to_server)
-        
-        print ('(AUTH-auth authenicated id:%s on dpid:%s' % (src_ip, datapath.id))
+        print ('(AUTH-auth authenticated id:%s on dpid:%s' % (src_ip, datapath.id))
         
     def match_key(self, src_ip, dst_port, datapath):
         ''' Matches the sequence of knocks against buffered key '''
               
         print('dst port %d' % dst_port)
-        idx     = dst_port >> (num_port_bits - self.seq_size)
-        key_val = dst_port & (2**(num_port_bits - self.seq_size)) - 1
+        idx, key_val = port_to_parts(dst_port, self.seq_size)
         
         if (idx > self.key_length) or (idx < 0): 
             self.invalid_key('Key sequence number out of bounds')
@@ -207,23 +211,28 @@ class Port_Knocking(app_manager.RyuApp):
            
         if len(self.authing_hosts[src_ip]) == 0:
             # first sequence key
-            if idx != 0: return # don't accept anything until key is selected
+            if idx != 0: 
+                print('key not yet defined, seq #%d received' % idx)
+                return  # don't accept anything until key is selected
             else: key_id = key_val
         else:
             key_id  = self.authing_hosts[src_ip][0]
         
         if key_id not in self.active_keys:
             self.invalid_key('Key id not valid %d' % (key_id))
-            remove_key(src_ip)
+            self.remove_key_from(src_ip)
             return 
         
-        if self.active_keys[key_id]['key'][idx] != key_val: # check they match
-            self.invalid_key('value %d doesn\'t match key idx %d of key %d (%d)' % (key_val, idx, key_id, self.active_keys[key_id]['key'][idx]))
+        if self.active_keys[key_id]['key'][idx] != key_val:  # check they match
+            self.invalid_key('value %d doesn\'t match key idx %d of key %d (%d)'
+                              % (key_val, idx, key_id, self.active_keys[key_id]['key'][idx]))
             return
             
         if idx not in self.authing_hosts[src_ip]:
-            print('(AUTH-ing) buffer %d = %d' % (idx, key_val))
+            print('(AUTH-buffered) %s length: %d/%d (%d)' % (src_ip, len(self.authing_hosts[src_ip]),self.key_length, key_val))
             self.authing_hosts[src_ip][idx] = key_val
+        else:
+            print('duplicate %d->%d' % (idx,key_val))
         
         if len(self.authing_hosts[src_ip]) == self.key_length:
             # key complete, authorise IP address to access server
@@ -239,16 +248,14 @@ class Port_Knocking(app_manager.RyuApp):
             
             # install flows to access server
             self.auth_host(src_ip, datapath)
-        else:
-            print('(AUTH-buffered) %s length: %d/%d' % (src_ip, len(self.authing_hosts[src_ip]),self.key_length))
         
     def invalid_key(self, msg=''):
         # TODO: block for a few seconds
         # TODO: release authing key from host?
         print('(AUTH-invalid key) %s' % msg)
     
-    def remove_key(self, src_ip):
-        ''' expired keys are disassociated from host '''
+    def remove_key_from(self, src_ip):
+        ''' expired keys are disassociated from authing host '''
         del self.authing_hosts[src_ip]
     
     def initialise_host_auth(self, src_ip, datapath):
@@ -262,7 +269,7 @@ class Port_Knocking(app_manager.RyuApp):
         match_ipv4.append_field(ofproto_v1_3.OXM_OF_IPV4_SRC, int(IPAddress(src_ip)))
         match_ipv4.append_field(ofproto_v1_3.OXM_OF_IPV4_DST, int(self.server_ipv4_address))
         
-        self.add_flow(datapath, 3, match_ipv4, action_fwd_to_controller)
+        add_flow(datapath, 3, match_ipv4, action_fwd_to_controller)
         
     def remove_authing_flows(self,src_ip):
         ''' removes the flows that capture knock sequence '''
@@ -270,7 +277,7 @@ class Port_Knocking(app_manager.RyuApp):
         match_ipv4.append_field(ofproto_v1_3.OXM_OF_IPV4_SRC, int(IPAddress(src_ip)))
         
         for id, dp in self.datapaths:
-            self.delete_flow(dp, 3, match_ipv4)
+            delete_flow(dp, 3, match_ipv4)
     
     def set_datapath_svr_port(self, dpid, in_port):
         if dpid in self.server_port and self.server_port[dpid] == in_port:
@@ -328,7 +335,7 @@ class Port_Knocking(app_manager.RyuApp):
                 # avoids controller forwarding on other IP packets while ALL TO CONTROLLER is active
                 return
                 
-            # ipv6 version (TODO)
+        # ipv6 to server, block from switch
         if eth_type == ether_types.ETH_TYPE_IPV6:
             ip = pkt.get_protocols(ipv6.ipv6)[0]
             if ip.dst == str(self.server_ipv6_address):
@@ -340,56 +347,62 @@ class Port_Knocking(app_manager.RyuApp):
         
         # do regular switching
         self.switching.packet_in_handler(ev)
-          
-    def add_flow(self, datapath, priority, match, actions, buffer_id=None):
-        '''Adds this flow to the given datapath'''
-        
-        ofproto = datapath.ofproto
-        parser = datapath.ofproto_parser
-        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,actions)]
-        if buffer_id:
-            mod = parser.OFPFlowMod(datapath=datapath, buffer_id=buffer_id,
-                                    priority=priority, match=match, instructions=inst)
-        else:
-            mod = parser.OFPFlowMod(datapath=datapath, priority=priority, 
-                                    match=match, instructions=inst)
-        self.logger.debug("(AUTH-add flow): %s %s" % (match, actions))
-        datapath.send_msg(mod)
-        
-    def delete_flow(self, datapath, priority, match):
-        ''' This method is stolen from Jarrod :P '''
-        ofproto = datapath.ofproto
-        parser = datapath.ofproto_parser
-        command = ofproto.OFPFC_DELETE_STRICT
-        mod = parser.OFPFlowMod(datapath=datapath, command=command,
-                                priority=priority, match=match,
-                                out_port=ofproto.OFPP_ANY,
-                                out_group=ofproto.OFPG_ANY)
-        datapath.send_msg(mod)
-        
-    def print_object(self, obj):
-        ''' Prints all the attributes of a object
-            http://stackoverflow.com/a/5969930 '''
-        attrs = vars(obj)
-        print ', '.join("%s: %s" % item for item in attrs.items())
 
-    def eth_type_to_str(self, eth_type):
-        '''Given an eth_type hex value, return the eth_type name'''
-        return {
-            ether_types.ETH_TYPE_IP:        'ETH_TYPE_IP',
-            ether_types.ETH_TYPE_ARP:       'ETH_TYPE_ARP',
-            ether_types.ETH_TYPE_8021Q:     'ETH_TYPE_8021Q',
-            ether_types.ETH_TYPE_IPV6:      'ETH_TYPE_IPV6',
-            ether_types.ETH_TYPE_SLOW:      'ETH_TYPE_SLOW',
-            ether_types.ETH_TYPE_MPLS:      'ETH_TYPE_MPLS',
-            ether_types.ETH_TYPE_8021AD:    'ETH_TYPE_8021AD',
-            ether_types.ETH_TYPE_LLDP:      'ETH_TYPE_LLDP',
-            ether_types.ETH_TYPE_8021AH:    'ETH_TYPE_8021AH',
-            ether_types.ETH_TYPE_IEEE802_3: 'ETH_TYPE_IEEE802_3',
-            ether_types.ETH_TYPE_CFM:       'ETH_TYPE_CFM'
-        }.get(eth_type,"Type %x not found" % (eth_type))
-        
-    def ip_proto_to_str(self, ip_proto):
+
+def port_to_parts(port_num, seq_size):
+    idx     = port_num >> (num_port_bits - seq_size)
+    key_val = port_num & (2**(num_port_bits - seq_size)) - 1
+    return (idx, key_val)
+          
+def add_flow(datapath, priority, match, actions, buffer_id=None):
+    '''Adds this flow to the given datapath'''
+    
+    ofproto = datapath.ofproto
+    parser = datapath.ofproto_parser
+    inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,actions)]
+    if buffer_id:
+        mod = parser.OFPFlowMod(datapath=datapath, buffer_id=buffer_id,
+                                priority=priority, match=match, instructions=inst)
+    else:
+        mod = parser.OFPFlowMod(datapath=datapath, priority=priority, 
+                                match=match, instructions=inst)
+    # print("(AUTH-add flow): %s %s" % (match, actions))
+    datapath.send_msg(mod)
+    
+def delete_flow(datapath, priority, match):
+    ''' This method is stolen from Jarrod :P '''
+    ofproto = datapath.ofproto
+    parser = datapath.ofproto_parser
+    command = ofproto.OFPFC_DELETE_STRICT
+    mod = parser.OFPFlowMod(datapath=datapath, command=command,
+                            priority=priority, match=match,
+                            out_port=ofproto.OFPP_ANY,
+                            out_group=ofproto.OFPG_ANY)
+    datapath.send_msg(mod)
+    
+def print_object(obj):
+    ''' Prints all the attributes of a object
+        http://stackoverflow.com/a/5969930 '''
+    attrs = vars(obj)
+    print ', '.join("%s: %s" % item for item in attrs.items())
+
+def eth_type_to_str(eth_type):
+    '''Given an eth_type hex value, return the eth_type name'''
+    return {
+        ether_types.ETH_TYPE_IP:        'ETH_TYPE_IP',
+        ether_types.ETH_TYPE_ARP:       'ETH_TYPE_ARP',
+        ether_types.ETH_TYPE_8021Q:     'ETH_TYPE_8021Q',
+        ether_types.ETH_TYPE_IPV6:      'ETH_TYPE_IPV6',
+        ether_types.ETH_TYPE_SLOW:      'ETH_TYPE_SLOW',
+        ether_types.ETH_TYPE_MPLS:      'ETH_TYPE_MPLS',
+        ether_types.ETH_TYPE_8021AD:    'ETH_TYPE_8021AD',
+        ether_types.ETH_TYPE_LLDP:      'ETH_TYPE_LLDP',
+        ether_types.ETH_TYPE_8021AH:    'ETH_TYPE_8021AH',
+        ether_types.ETH_TYPE_IEEE802_3: 'ETH_TYPE_IEEE802_3',
+        ether_types.ETH_TYPE_CFM:       'ETH_TYPE_CFM'
+    }.get(eth_type,"Type %x not found" % (eth_type))
+    
+def ip_proto_to_str(ip_proto):
         ''' Given an ip_proto number, returns the protocol name '''
         return {
             in_proto.IPPROTO_IP:        'IPPROTO_IP',
