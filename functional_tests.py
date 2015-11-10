@@ -100,12 +100,6 @@ def test5():
     print('h4 no access')
     call_host('h4', '--ping', 'icmp','--ans','0','--unans','10')
     
-    # try:
-        # response = urllib2.urlopen(rest_server+inform_pattern).read()
-        # print(json.loads(response)['hosts']['authenticating_hosts'])
-    # except urllib2.HTTPError:
-        # print('error')
-    
     print('h4 attempted auth #2 (no key id)')
     call_host('h4', '--auth', 'noid', '-k', '2','--ans','0','--unans','3')
     print('h4 no access')
