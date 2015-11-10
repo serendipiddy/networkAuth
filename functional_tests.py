@@ -164,6 +164,18 @@ def test8():
     call_host('h6', '--ping', 'tcp', '-p', '[80,22,100]','--ans','0','--unans','30')
     call_host('h6', '--ping', 'arp','--ans','10','--unans','0')
     
+def test9():
+    print('=== test #9 -- h1 auth len key 256 ===')
+    print('h1 no access:')
+    call_host('h1', '--ping', 'icmp','--ans','0','--unans','10')
+    call_host('h1', '--ping', 'tcp', '-p', '[80,22]','--ans','0','--unans','20')
+    print('h1 auth:')
+    call_host('h3', '--auth', 'full', '-k', '10','--ans','0','--unans','256')
+    print('h1 full access:')
+    call_host('h1', '--ping', 'icmp','--ans','10','--unans','0')
+    call_host('h1', '--ping', 'tcp', '-p', '[80,22]','--ans','20','--unans','0')
+    
+    
 def main(argv):
     print('=== ## beginning tests ## ===')
     test0()
@@ -175,6 +187,7 @@ def main(argv):
     test6()
     test7()
     test8()
+    # test9()
 
 
 

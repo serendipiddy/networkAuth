@@ -115,7 +115,7 @@ class Port_Knocking(app_manager.RyuApp):
               first is used as the key's ID
               return true is no key conflict, false if key_id exists  '''
         if len(key_list) != self.key_length:
-            print('(AUTH-addkey) invalid key list, too long (%d!=%d)' % len(key_list),self.key_length)
+            print('(AUTH-addkey) invalid key list, too long (%d!=%d)' % (len(key_list),self.key_length))
             return True
             
         if len(key_list) > 2**self.seq_size:
@@ -203,6 +203,8 @@ class Port_Knocking(app_manager.RyuApp):
     def match_key(self, src_ip, dst_port, datapath):
         ''' Matches the sequence of knocks against buffered key '''
               
+        # TODO no penalty on self.auth_port!
+              
         print('dst port %d' % dst_port)
         idx, key_val = port_to_parts(dst_port, self.seq_size)
         
@@ -263,7 +265,7 @@ class Port_Knocking(app_manager.RyuApp):
         print ('(AUTH-auth init) received init from %s' % src_ip)
         self.authing_hosts[src_ip] = {} # empty key buffer
         
-        # install flow, fwd all tcp to controller TODO
+        # install flow, fwd all tcp to controller
         action_fwd_to_controller = [ofproto_v1_3_parser.OFPActionOutput(ofproto_v1_3.OFPP_CONTROLLER)]
         match_ipv4 = ofproto_v1_3_parser.OFPMatch()
         match_ipv4.append_field(ofproto_v1_3.OXM_OF_ETH_TYPE, ether_types.ETH_TYPE_IP)
